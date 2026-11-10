@@ -11,6 +11,8 @@ temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
 
 # Quarkus extensions: no version here, the Quarkus BOM decides it.
 quarkus-arc = { module = "io.quarkus:quarkus-arc" }
+quarkus-health = { module = "io.quarkus:quarkus-smallrye-health" }
+quarkus-metrics-prometheus = { module = "io.quarkus:quarkus-micrometer-registry-prometheus" }
 
 [plugins]
 quarkus = { id = "io.quarkus", version.ref = "quarkus" }

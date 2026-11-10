@@ -8,4 +8,9 @@ dependencies {
 
     // CDI (dependency injection) and the application lifecycle.
     implementation libs.quarkus.arc
+
+    // Health endpoints (/q/health) and Prometheus metrics (/q/metrics).
+    // Both start an HTTP server.
+    implementation libs.quarkus.health
+    implementation libs.quarkus.metrics.prometheus
 }

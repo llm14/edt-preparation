@@ -49,6 +49,22 @@ Run it:
 java -jar duis-signer/build/quarkus-app/quarkus-run.jar
 ```
 
+### Step 3: health and metrics
+
+Added `quarkus-smallrye-health` and `quarkus-micrometer-registry-prometheus` to `duis-signer`. Port set in
+`application.properties` (`quarkus.http.port=8083`).
+
+| Endpoint | Used for |
+|---|---|
+| `/q/health/live` | Liveness: is the process alive? If not, Kubernetes restarts it. |
+| `/q/health/ready` | Readiness: can it take work? If not, it gets no traffic. |
+| `/q/health` | Both together. |
+| `/q/metrics` | Prometheus metrics (JVM memory, threads, ...), scraped by monitoring. |
+
+Key ideas:
+- No checks are registered yet, so health is always `UP`. A check for the Temporal connection comes later.
+- Ports: batch-ingest 8081, orchestrator 8082, duis-signer 8083, response-listener 8084 (8080 is left for the Temporal UI).
+
 ## Service interactions
 
 To be filled in as each application is added.
