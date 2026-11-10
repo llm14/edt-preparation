@@ -1,0 +1,4 @@
+rootProject.name = 'edt'
+
+// The four applications are added here, one at a time, as we create them.
+// include 'duis-signer'

@@ -1,0 +1,13 @@
+# Version catalogue: every dependency and plugin version lives here, in one place.
+# Build files refer to them as libs.<name>, for example libs.temporal.sdk.
+
+[versions]
+quarkus = "3.40.1.2"
+temporal = "1.40.0"
+
+[libraries]
+quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
+
+[plugins]
+quarkus = { id = "io.quarkus", version.ref = "quarkus" }

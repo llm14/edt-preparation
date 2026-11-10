@@ -1,0 +1,18 @@
+// Settings shared by every application in the build.
+subprojects {
+    apply plugin: 'java'
+
+    group = 'prepare.edt'
+    version = '0.1.0-SNAPSHOT'
+
+    repositories {
+        mavenCentral()
+    }
+
+    // Compile and run with Java 25, whatever JDK the shell uses.
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(25)
+        }
+    }
+}

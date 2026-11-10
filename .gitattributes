@@ -1,0 +1,5 @@
+# Unix scripts must keep LF line endings, Windows scripts CRLF.
+gradlew text eol=lf
+*.sh    text eol=lf
+*.bat   text eol=crlf
+*.jar   binary
