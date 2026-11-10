@@ -1,0 +1,24 @@
+plugins {
+    alias(libs.plugins.quarkus)
+}
+
+dependencies {
+    // The BOM fixes the version of every Quarkus extension.
+    implementation enforcedPlatform(libs.quarkus.bom)
+
+    // CDI (dependency injection) and the application lifecycle.
+    implementation libs.quarkus.arc
+
+    // Health endpoints (/q/health) and Prometheus metrics (/q/metrics).
+    // Both start an HTTP server.
+    implementation libs.quarkus.health
+    implementation libs.quarkus.metrics.prometheus
+
+    // Logs as JSON, one object per line, in ECS format.
+    implementation libs.quarkus.logging.json
+
+    // Tests: JUnit 5 and ArchUnit (architecture rules).
+    testImplementation libs.junit.jupiter
+    testImplementation libs.archunit
+    testRuntimeOnly libs.junit.platform.launcher
+}

@@ -123,6 +123,44 @@ Key ideas:
 - `allowEmptyShould(true)` is temporary: `entity` and `usecase` are still empty.
 - Run the tests: `./gradlew :duis-signer:test`
 
+### Step 6: the other three applications
+
+`batch-ingest`, `orchestrator` and `response-listener` copy the structure of `duis-signer`:
+same build file, the four packages, their own `LogFields` and `ArchitectureTest`.
+Each keeps its own copy on purpose: the applications share no code, like separate services in production.
+
+| Application | Port | Package |
+|---|---|---|
+| `batch-ingest` | 8081 | `prepare.edt.batchingest` |
+| `orchestrator` | 8082 | `prepare.edt.orchestrator` |
+| `duis-signer` | 8083 | `prepare.edt.duissigner` |
+| `response-listener` | 8084 | `prepare.edt.responselistener` |
+
+Build and test all: `./gradlew build`
+
 ## Service interactions
 
-To be filled in as each application is added.
+Planned, from the architecture model. Not implemented yet.
+
+The applications never call each other directly. They talk through the Temporal Server:
+
+```
+S3 upload -> SQS -> batch-ingest --start Batch workflow--> Temporal
+                                                              |
+orchestrator <-- runs Batch, Page, Flow, Service Request workflows
+     |  --Sign activity (signing task queue)--> duis-signer --> KMS
+     |  --signed Service Request--> DSP Gateway --> DSP --> device
+     |
+     |  (minutes or hours later)
+     |  DSP --> DSP Gateway --> response-listener --signal (workflow ID from Request ID)--> Temporal
+     |
+     +--> Kafka: step events, device results, Batch result
+```
+
+| From | To | How |
+|---|---|---|
+| `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
+| `orchestrator` | `duis-signer` | Temporal activity on the signing task queue |
+| `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited |
+| `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) |
+| `orchestrator` | Kafka | publishes step, device and Batch results |
