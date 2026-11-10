@@ -65,6 +65,37 @@ Key ideas:
 - No checks are registered yet, so health is always `UP`. A check for the Temporal connection comes later.
 - Ports: batch-ingest 8081, orchestrator 8082, duis-signer 8083, response-listener 8084 (8080 is left for the Temporal UI).
 
+### Step 4: structured logging (ECS JSON)
+
+Added `quarkus-logging-json`, configured in `application.properties`:
+- Packaged app (`prod`): one JSON object per line, ECS format. This is what the log agent sends to CloudWatch.
+- Dev and test: plain text, easier to read.
+
+Structured logging means the data goes into **fields**, not into the message text.
+`LogFields` puts key-value fields into the MDC for the lines written inside a `try` block:
+
+```java
+try (var fields = LogFields.of("event.action", "startup")) {
+    LOG.info("DUIS Signer started");
+}
+```
+
+Output in JSON (shortened):
+```
+{"@timestamp":"...","log.level":"INFO","message":"DUIS Signer started","mdc":{"event.action":"startup"},"service.name":"duis-signer"}
+```
+
+Output in dev:
+```
+16:02:30 INFO  [pr.ed.du.StartupLog] DUIS Signer started {event.action=startup}
+```
+
+Key ideas:
+- **MDC** (Mapped Diagnostic Context): fields attached to the current thread, added to every log line until removed.
+  `LogFields` removes them when the `try` block ends.
+- Custom fields appear under `mdc`, not at the top level.
+- Temporal workflow code needs its own logger (`Workflow.getLogger`), because workflows are replayed. Comes later.
+
 ## Service interactions
 
 To be filled in as each application is added.

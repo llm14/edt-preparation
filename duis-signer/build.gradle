@@ -13,4 +13,7 @@ dependencies {
     // Both start an HTTP server.
     implementation libs.quarkus.health
     implementation libs.quarkus.metrics.prometheus
+
+    // Logs as JSON, one object per line, in ECS format.
+    implementation libs.quarkus.logging.json
 }
