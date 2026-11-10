@@ -1,4 +1,4 @@
-package prepare.edt.duissigner;
+package prepare.edt.duissigner.infrastructure;
 
 import java.util.ArrayList;
 import java.util.List;

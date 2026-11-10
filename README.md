@@ -96,6 +96,33 @@ Key ideas:
 - Custom fields appear under `mdc`, not at the top level.
 - Temporal workflow code needs its own logger (`Workflow.getLogger`), because workflows are replayed. Comes later.
 
+### Step 5: Clean Architecture packages and the architecture test
+
+Each application has four packages. Dependencies point inward only:
+
+```
+infrastructure, adapter  ->  usecase  ->  entity
+```
+
+| Package | Contains | May use frameworks? |
+|---|---|---|
+| `entity` | Core concepts (a signing decision, a User Role) | No |
+| `usecase` | Application logic, plus interfaces for what it needs from outside | No |
+| `adapter` | Implements those interfaces (Temporal activity, KMS, audit log) | Yes |
+| `infrastructure` | Wiring and helpers (startup, CDI producers, `LogFields`) | Yes |
+
+`ArchitectureTest` (ArchUnit 1.5.1) fails the build if:
+- `entity` uses `usecase`, `adapter` or `infrastructure`,
+- `usecase` uses `adapter` or `infrastructure`,
+- `entity` or `usecase` uses Quarkus, Temporal, AWS SDK or `jakarta`.
+
+Key ideas:
+- A use case says *what* it needs (an interface, for example "sign these bytes"); an adapter says *how* (KMS).
+  So the signing provider can change without touching the logic.
+- Use cases have no CDI annotations: `infrastructure` creates them with producer methods.
+- `allowEmptyShould(true)` is temporary: `entity` and `usecase` are still empty.
+- Run the tests: `./gradlew :duis-signer:test`
+
 ## Service interactions
 
 To be filled in as each application is added.

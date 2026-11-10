@@ -15,4 +15,9 @@ subprojects {
             languageVersion = JavaLanguageVersion.of(25)
         }
     }
+
+    // Run tests with JUnit 5.
+    tasks.withType(Test).configureEach {
+        useJUnitPlatform()
+    }
 }

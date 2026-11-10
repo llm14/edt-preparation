@@ -16,4 +16,9 @@ dependencies {
 
     // Logs as JSON, one object per line, in ECS format.
     implementation libs.quarkus.logging.json
+
+    // Tests: JUnit 5 and ArchUnit (architecture rules).
+    testImplementation libs.junit.jupiter
+    testImplementation libs.archunit
+    testRuntimeOnly libs.junit.platform.launcher
 }

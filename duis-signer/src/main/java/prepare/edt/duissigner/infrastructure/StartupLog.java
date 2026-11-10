@@ -1,4 +1,4 @@
-package prepare.edt.duissigner;
+package prepare.edt.duissigner.infrastructure;
 
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
