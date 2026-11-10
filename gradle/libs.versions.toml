@@ -9,5 +9,8 @@ temporal = "1.40.0"
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
 
+# Quarkus extensions: no version here, the Quarkus BOM decides it.
+quarkus-arc = { module = "io.quarkus:quarkus-arc" }
+
 [plugins]
 quarkus = { id = "io.quarkus", version.ref = "quarkus" }

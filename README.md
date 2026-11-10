@@ -29,6 +29,26 @@ Key ideas:
 - **Toolchain**: Gradle compiles with Java 25 even if another JDK is active.
 - **Catalogue**: build files use `libs.temporal.sdk` instead of repeating version numbers.
 
+### Step 2: first application, `duis-signer`
+
+| File | What it does |
+|---|---|
+| `duis-signer/build.gradle` | Applies the Quarkus plugin and imports the Quarkus BOM. |
+| `duis-signer/src/main/resources/application.properties` | Quarkus configuration (for now only the app name). |
+| `duis-signer/src/main/java/prepare/edt/duissigner/StartupLog.java` | Placeholder bean that logs a line at startup. |
+
+Key ideas:
+- **BOM** (`enforcedPlatform`): fixes the version of every Quarkus extension, so they are never mixed.
+- **CDI** (`quarkus-arc`): Quarkus creates `@ApplicationScoped` beans and calls `@Observes StartupEvent` methods at startup.
+- A Quarkus app keeps running until stopped, even with no HTTP server.
+
+Run it:
+```
+./gradlew :duis-signer:quarkusDev                      # dev mode, live reload
+./gradlew :duis-signer:build                           # package
+java -jar duis-signer/build/quarkus-app/quarkus-run.jar
+```
+
 ## Service interactions
 
 To be filled in as each application is added.
