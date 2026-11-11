@@ -1,8 +1,9 @@
 # The DCC side of the EDT, for local development. In production DCC provides and runs these.
-# For now: Temporal (server, PostgreSQL, UI). Kafka, LocalStack and the simulators come later.
+# For now: Temporal (server, PostgreSQL, UI) and moto (AWS KMS). Kafka and the simulators come later.
 #
 #   docker network create edt     # once, shared with the root docker-compose.yml
-#   docker compose up -d          # from this folder
+#   ./gradlew :kms-setup:installDist   # from this folder, once and after changes
+#   docker compose up -d --build        # from this folder
 #   Temporal UI: http://localhost:8088
 #
 # Start order (enforced by depends_on):
@@ -82,6 +83,36 @@ services:
       TEMPORAL_DEFAULT_NAMESPACE: edt
     ports:
       - "8088:8080"   # host 8088 (8080 is taken on this machine)
+
+  # AWS emulator (open source, no account). For now only KMS is used: it holds the User Role keys.
+  # Everything is in memory: a restart loses the keys, and kms-setup creates new ones.
+  moto:
+    image: motoserver/moto:5.2.5
+    ports:
+      - "5000:5000"   # AWS API endpoint: http://localhost:5000 from your machine, http://moto:5000 in Docker
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/moto-api/')"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: creates the KMS keys of the two User Roles and the certificate store, then exits.
+  # Build first: ./gradlew :kms-setup:installDist (from dcc-tools/)
+  kms-setup:
+    build: ./kms-setup
+    image: edt/kms-setup:local
+    depends_on:
+      moto:
+        condition: service_healthy
+    environment:
+      EDT_KMS_ENDPOINT: http://moto:5000
+      AWS_REGION: eu-west-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      EDT_CERT_STORE: /certs/certificate-store.p12
+      EDT_CERT_STORE_PASSWORD: edt-test-only
+    volumes:
+      - ./certs:/certs   # the certificate store, read later by duis-signer
 
 networks:
   default:

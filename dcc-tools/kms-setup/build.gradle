@@ -1,0 +1,16 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    // AWS SDK: the BOM fixes the version of every AWS module.
+    implementation platform(libs.awssdk.bom)
+    implementation libs.awssdk.kms
+
+    // BouncyCastle: only to build X.509 certificates (the JDK has no public API for that).
+    implementation libs.bouncycastle.pkix
+}
+
+application {
+    mainClass = 'prepare.edt.dcctools.kmssetup.KmsSetup'
+}

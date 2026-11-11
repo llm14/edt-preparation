@@ -1,0 +1,4 @@
+rootProject.name = 'dcc-tools'
+
+// Tools that play the DCC side locally. A separate build: the EDT applications never depend on it.
+include 'kms-setup'

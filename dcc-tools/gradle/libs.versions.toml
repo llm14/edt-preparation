@@ -1,0 +1,10 @@
+# Version catalogue of the dcc-tools build (separate from the EDT build's catalogue).
+
+[versions]
+awssdk = "2.57.13"
+bouncycastle = "1.87"
+
+[libraries]
+awssdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "awssdk" }
+awssdk-kms = { module = "software.amazon.awssdk:kms" }
+bouncycastle-pkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }

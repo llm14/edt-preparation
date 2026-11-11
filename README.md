@@ -357,6 +357,41 @@ How the provider reaches the XML signature: the JDK's XML DSig reads the sign-co
 `org.jcp.xml.dsig.internal.dom.SignatureProvider` and calls `Signature.getInstance(alg, provider)`.
 It also converts the ECDSA signature from DER (what JCA returns) to r||s (what XML DSig needs).
 
+### Step 11c-1: KMS keys in moto, and the certificate store
+
+`dcc-tools` now has **moto** (open-source AWS emulator, no account) and its own Gradle build with one tool, `kms-setup`.
+
+```
+cd dcc-tools
+./gradlew :kms-setup:installDist     # build the tool (separate build, own wrapper)
+docker compose up -d --build         # moto starts, then kms-setup runs once and exits
+ls certs/                            # certificate-store.p12 (git-ignored, regenerated at every start)
+```
+
+`kms-setup` plays DCC's part (`dcc-tools/kms-setup/.../KmsSetup.java`):
+1. For each User Role, a KMS key `ECC_NIST_P256` / `SIGN_VERIFY`, alias `alias/edt-other-user` and
+   `alias/edt-registered-supplier-agent`. The private key is created inside KMS and never leaves it.
+2. A test CA, in memory only.
+3. For each role, a certificate holding the **KMS public key**, signed by the test CA.
+   A CA only needs the subject's public key, so a key that lives in KMS can be certified.
+4. The **certificate store**: PKCS#12, certificates only (no private keys), written with JCA `KeyStore`.
+
+| Service | Role |
+|---|---|
+| `moto` | AWS API on port 5000. Only KMS is used for now. Keeps everything in memory. |
+| `kms-setup` | Runs once at every start: keys, test CA, certificates, `certs/certificate-store.p12`. |
+
+Key ideas:
+- **Keys vs certificates**: KMS holds the private keys; the certificate store holds the certificates.
+  The model says the same: KMS cannot hold certificates.
+- **In memory**: restarting moto loses the keys; `kms-setup` creates new ones and a new store.
+  Restart `duis-signer` afterwards, so it reads the new certificates.
+- BouncyCastle is used only here, to build certificates (the JDK has no public API for it). The CA still signs through JCA.
+
+**Known moto gap** (checked with a probe): KMS `Sign` with `MessageType=DIGEST` gives a wrong signature,
+because moto hashes the digest again. Real AWS KMS signs the digest as given. The model says the signer sends the
+**digest**, so the EDT keeps DIGEST and the gap is handled on the `dcc-tools` side (next step).
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
