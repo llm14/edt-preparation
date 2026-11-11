@@ -34,7 +34,7 @@ import software.amazon.awssdk.services.kms.model.KeyUsageType;
 import software.amazon.awssdk.services.kms.model.NotFoundException;
 
 /**
- * Plays DCC's part for local development: creates the User Role keys in KMS (moto) and the certificate store.
+ * Plays DCC's part for local development: creates the User Role keys in KMS (Floci) and the certificate store.
  *
  *   1. For each User Role, a KMS key (ECC_NIST_P256, SIGN_VERIFY) with alias "alias/edt-<role>".
  *      The private key is created inside KMS and never leaves it.
@@ -43,12 +43,12 @@ import software.amazon.awssdk.services.kms.model.NotFoundException;
  *   4. The certificate store: a PKCS#12 file with the certificates only (no private keys),
  *      which the DUIS Signer mounts read-only.
  *
- * moto keeps everything in memory, so this runs at every start of dcc-tools. TEST keys and certificates only.
+ * Floci keeps everything in memory, so this runs at every start of dcc-tools. TEST keys and certificates only.
  *
  * Configuration (environment variables):
- *   EDT_KMS_ENDPOINT        KMS endpoint, for example http://moto:5000
+ *   EDT_KMS_ENDPOINT        KMS endpoint, for example http://floci:4566
  *   AWS_REGION              for example eu-west-2
- *   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   anything: moto does not check them
+ *   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   any non-empty value: Floci does not check them
  *   EDT_CERT_STORE          output file, for example /certs/certificate-store.p12
  *   EDT_CERT_STORE_PASSWORD password of the certificate store
  */

@@ -350,21 +350,21 @@ a spy provider proves the configured provider does the signing.
 | Setup | KeyStore type | Signature provider | Where the private key is |
 |---|---|---|---|
 | Tests (now) | `PKCS12` | `SunEC` (JDK) | in the `.p12` file |
-| Local with moto (11c) | `KMS` (our provider) | our KMS provider | inside KMS (moto) |
+| Local with Floci (11c) | `KMS` (our provider) | our KMS provider | inside KMS (Floci) |
 | Maybe later | vendor type | CloudHSM provider | inside the HSM |
 
 How the provider reaches the XML signature: the JDK's XML DSig reads the sign-context property
 `org.jcp.xml.dsig.internal.dom.SignatureProvider` and calls `Signature.getInstance(alg, provider)`.
 It also converts the ECDSA signature from DER (what JCA returns) to r||s (what XML DSig needs).
 
-### Step 11c-1: KMS keys in moto, and the certificate store
+### Step 11c-1: KMS keys in Floci, and the certificate store
 
-`dcc-tools` now has **moto** (open-source AWS emulator, no account) and its own Gradle build with one tool, `kms-setup`.
+`dcc-tools` now has **Floci** (open-source AWS emulator, MIT, no account) and its own Gradle build with one tool, `kms-setup`.
 
 ```
 cd dcc-tools
 ./gradlew :kms-setup:installDist     # build the tool (separate build, own wrapper)
-docker compose up -d --build         # moto starts, then kms-setup runs once and exits
+docker compose up -d --build         # Floci starts, then kms-setup runs once and exits
 ls certs/                            # certificate-store.p12 (git-ignored, regenerated at every start)
 ```
 
@@ -378,19 +378,20 @@ ls certs/                            # certificate-store.p12 (git-ignored, regen
 
 | Service | Role |
 |---|---|
-| `moto` | AWS API on port 5000. Only KMS is used for now. Keeps everything in memory. |
+| `floci` | AWS API on port 4566 (`floci/floci:2.4.0`). Only KMS is used for now. Keeps everything in memory. |
 | `kms-setup` | Runs once at every start: keys, test CA, certificates, `certs/certificate-store.p12`. |
 
 Key ideas:
 - **Keys vs certificates**: KMS holds the private keys; the certificate store holds the certificates.
   The model says the same: KMS cannot hold certificates.
-- **In memory**: restarting moto loses the keys; `kms-setup` creates new ones and a new store.
+- **In memory**: restarting Floci loses the keys; `kms-setup` creates new ones and a new store.
   Restart `duis-signer` afterwards, so it reads the new certificates.
 - BouncyCastle is used only here, to build certificates (the JDK has no public API for it). The CA still signs through JCA.
 
-**Known moto gap** (checked with a probe): KMS `Sign` with `MessageType=DIGEST` gives a wrong signature,
-because moto hashes the digest again. Real AWS KMS signs the digest as given. The model says the signer sends the
-**digest**, so the EDT keeps DIGEST and the gap is handled on the `dcc-tools` side (next step).
+**Why Floci, not moto or LocalStack**: LocalStack now needs an account. moto was tried first, but a probe showed
+that KMS `Sign` with `MessageType=DIGEST` gives a wrong signature there (moto hashes the digest again). The model says
+the signer sends the **digest**, so the emulator was replaced rather than the design. Floci signs a digest as real
+AWS KMS does (checked with the same probe). It also covers S3, SQS and EventBridge, which Batch Ingest needs later.
 
 ## Service interactions
 
