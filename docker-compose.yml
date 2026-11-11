@@ -1,5 +1,5 @@
 # The four EDT applications.
-# The DCC side (Temporal, Kafka, LocalStack, simulators) runs from dcc-tools/docker-compose.yml.
+# The DCC side (Temporal, Kafka, Floci, simulators) runs from dcc-tools/docker-compose.yml.
 #
 #   docker network create edt        # once: the network both compose files share
 #   ./gradlew build                  # build the applications first
@@ -57,6 +57,8 @@ services:
     image: edt/response-listener:local
     restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8084:8084"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233   # it signals workflows through the Temporal Server
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8084 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]

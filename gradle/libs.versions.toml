@@ -23,6 +23,7 @@ quarkus-arc = { module = "io.quarkus:quarkus-arc" }
 quarkus-health = { module = "io.quarkus:quarkus-smallrye-health" }
 quarkus-metrics-prometheus = { module = "io.quarkus:quarkus-micrometer-registry-prometheus" }
 quarkus-logging-json = { module = "io.quarkus:quarkus-logging-json" }
+quarkus-rest = { module = "io.quarkus:quarkus-rest" }
 
 # Tests. JUnit versions also come from the Quarkus BOM.
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

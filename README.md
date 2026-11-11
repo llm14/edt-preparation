@@ -544,7 +544,7 @@ The **last group of the target device ID** chooses what the simulator does (PLAC
 | `-A4` | rejected | nothing |
 | `-A5` | accepted | DCC Alert N53, then Response |
 
-Delivery to the Response Listener is retried 5 times, 3 s apart (the gateway retries; the listener answers 500
+Delivery to the Response Listener is retried 5 times, 3 s apart (the gateway retries; the listener answers 503
 when Temporal is down), then dropped.
 
 | File | What it does |
@@ -574,9 +574,54 @@ Key ideas:
   connection, to another application.
 - Not yet: the DSP signature on its messages, and its check by the sender and the Response Listener.
 
+### Step 12c: the Response Listener signals the waiting workflow
+
+The asynchronous answer now reaches the workflow. The Response Listener runs **no worker**: it is only a
+Temporal *client* that sends signals.
+
+```
+dsp-simulator --POST Response / DCC Alert--> response-listener :8084/duis/responses
+   read RequestId (and AlertCode) -> workflow ID "service-request-" + RequestId
+   --signal "DspMessage" {type, alertCode, xml}--> Temporal Server --> Service Request workflow (in the orchestrator)
+```
+
+No database: the Request ID alone gives the workflow ID, because both applications apply the same rule
+(each its own copy). The signal name and its JSON fields are the whole contract between them.
+
+The HTTP status tells the gateway whether to retry:
+
+| Case | Status |
+|---|---|
+| delivered to the waiting workflow | 200 `signalled` |
+| no running workflow (ended, for example timed out): logged as `dsp-message-orphan` | 200 `orphan` (a retry would not help) |
+| not a readable Response or DCC Alert | 400 |
+| Temporal unreachable | 503 (the gateway retries) |
+
+| File | What it does |
+|---|---|
+| `response-listener/.../entity/ServiceRequestWorkflowId.java` | The rule Request ID -> workflow ID. |
+| `.../usecase/RouteDspMessage.java` | read -> (DSP signature check, later) -> workflow ID -> signal. |
+| `.../adapter/XmlDspMessageReader.java` | Reads `Response` / `DCCAlert` (PLACEHOLDER XML), refuses DTDs. |
+| `.../adapter/TemporalWorkflowSignaller.java` | `client.newUntypedWorkflowStub(id).signal("DspMessage", payload)`. `WorkflowNotFoundException` = orphan. |
+| `.../adapter/DspMessageResource.java` | `POST /duis/responses`; maps the result to the HTTP status; logs. |
+
+Test `TemporalWorkflowSignallerTest` runs a stand-in workflow with the same type, signal name and fields as the
+Orchestrator's, on Temporal's in-memory server: a check of our side of the contract.
+
+Run: `docker compose up --build -d response-listener`, then the samples as in 12b. Results now:
+A0 and A5 `RESPONDED`, A1 and A2 `FAILED_ALERT`, A3 `TIMED_OUT`, A4 `REJECTED_BY_DSP`.
+In the Temporal UI the wait now ends with `WorkflowExecutionSignaled` instead of `TimerFired`.
+
+Key ideas:
+- **Signal through the server**: the listener never calls the Orchestrator. If the Orchestrator is down, the signal
+  waits in the workflow history and is processed when it comes back.
+- **A signal for an ended workflow fails**: that is how orphans are detected, with no table of our own.
+- Not yet: the DSP signature check (needs a DSP key and certificate in dcc-tools).
+
 ## Service interactions
 
-From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS) and `orchestrator` to the DSP (simulator).
+From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),
+and the DSP back to `response-listener`, which signals the workflow.
 
 The applications never call each other directly. They talk through the Temporal Server:
 
@@ -598,5 +643,5 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; rate limit in 12d)** |
-| `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) |
+| `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working; DSP signature check later)** |
 | `orchestrator` | Kafka | publishes step, device and Batch results |
