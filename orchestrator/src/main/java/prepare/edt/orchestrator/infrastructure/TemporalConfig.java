@@ -20,4 +20,7 @@ public interface TemporalConfig {
 
     /** Task queue of the DUIS Signer, where Sign activities are scheduled (property "signing-task-queue"). */
     String signingTaskQueue();
+
+    /** Task queue of the DUIS Sender, shared by every Service Request (property "send-task-queue"). */
+    String sendTaskQueue();
 }

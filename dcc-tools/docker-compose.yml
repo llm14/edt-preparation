@@ -1,8 +1,8 @@
 # The DCC side of the EDT, for local development. In production DCC provides and runs these.
-# For now: Temporal (server, PostgreSQL, UI) and Floci (AWS KMS). Kafka and the simulators come later.
+# For now: Temporal (server, PostgreSQL, UI), Floci (AWS KMS) and the DSP simulator. Kafka comes later.
 #
 #   docker network create edt     # once, shared with the root docker-compose.yml
-#   ./gradlew :kms-setup:installDist   # from this folder, once and after changes
+#   ./gradlew installDist              # from this folder: builds kms-setup and dsp-simulator
 #   docker compose up -d --build        # from this folder
 #   Temporal UI: http://localhost:8088
 #
@@ -109,6 +109,22 @@ services:
       EDT_CERT_STORE_PASSWORD: edt-test-only
     volumes:
       - ./certs:/certs   # the certificate store, read later by duis-signer
+
+  # Plays the DSP HTTPS Gateway, the DSP and the devices. Behaviour by the last group of the target device ID.
+  # Build first: ./gradlew :dsp-simulator:installDist (from dcc-tools/)
+  dsp-simulator:
+    build: ./dsp-simulator
+    image: edt/dsp-simulator:local
+    ports:
+      - "8090:8090"   # Service Requests: POST http://dsp-simulator:8090/duis/service-requests
+    environment:
+      EDT_RESPONSE_LISTENER_URL: http://response-listener:8084/duis/responses
+      EDT_RESPONSE_DELAY_SECONDS: "5"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8090 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 networks:
   default:

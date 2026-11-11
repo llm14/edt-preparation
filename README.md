@@ -523,9 +523,60 @@ To confirm with DCC / the lead:
 - Open point 2 (retries): built as the model says (send once, never resent). The call described resending.
 - What DCC Alerts other than N12/N13 should do (for now: keep waiting).
 
+### Step 12b: the DSP simulator, and the real DUIS Sender
+
+`dcc-tools/dsp-simulator` plays the DSP HTTPS Gateway, the DSP and the devices. Plain Java, no framework
+(the JDK's `HttpServer` and `HttpClient`). The Orchestrator now runs the Service Request workflow for real.
+
+```
+orchestrator (worker on duis-send)  --POST signed Service Request-->  dsp-simulator :8090
+                                    <--synchronous response (I0 accepted / E99 rejected)--
+dsp-simulator  --later: POST Response or DCC Alert-->  response-listener :8084/duis/responses  (step 12c)
+```
+
+The **last group of the target device ID** chooses what the simulator does (PLACEHOLDER codes):
+
+| Ends in | Synchronous | Then |
+|---|---|---|
+| `-A0` (default) | accepted | Response after 5 s |
+| `-A1` / `-A2` | accepted | DCC Alert N12 / N13 |
+| `-A3` | accepted | nothing (the EDT times out) |
+| `-A4` | rejected | nothing |
+| `-A5` | accepted | DCC Alert N53, then Response |
+
+Delivery to the Response Listener is retried 5 times, 3 s apart (the gateway retries; the listener answers 500
+when Temporal is down), then dropped.
+
+| File | What it does |
+|---|---|
+| `dcc-tools/dsp-simulator/.../DspSimulator.java` | HTTP server: answers at once, schedules the asynchronous messages. |
+| `.../DeviceBehaviour.java` | Behaviour from the device ID. |
+| `.../DspMessages.java` | Reads Service Requests, writes the PLACEHOLDER sync response, Response and DCC Alert. |
+| `orchestrator/.../adapter/DuisSenderActivityImpl.java` | Posts once with the JDK `HttpClient`, reads the sync response. HTTP error -> exception. |
+| `orchestrator/.../infrastructure/TemporalWorker.java` | Two workers: `orchestrator` (workflows, builder) and `duis-send` (sender). |
+
+Run a Service Request (both stacks running; inputs in `samples/service-request/`):
+```
+cd dcc-tools && ./gradlew installDist && docker compose up -d --build && cd ..
+docker compose up --build -d orchestrator duis-signer
+MSYS_NO_PATHCONV=1 docker run --rm --network edt -v "$(pwd -W)/samples/service-request:/in:ro" temporalio/admin-tools:1.32.2 \
+  temporal --address temporal:7233 --namespace edt workflow execute --type ServiceRequest --task-queue orchestrator \
+  --workflow-id "service-request-90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A4:5" --input-file /in/A4-rejected.json
+```
+The workflow ID is `service-request-` + the `requestId` in the file.
+
+Until step 12c, accepted requests end `TIMED_OUT` after 2 minutes: the simulator cannot deliver the Response
+(no Response Listener yet). In the Temporal UI the wait is the event `TimerStarted`, then `TimerFired`.
+
+Key ideas:
+- **Two task queues, one application**: one worker per queue. The send queue gets its rate limit in 12d.
+- **Synchronous vs asynchronous**: the HTTP reply only says "accepted"; the device's answer comes later, on another
+  connection, to another application.
+- Not yet: the DSP signature on its messages, and its check by the sender and the Response Listener.
+
 ## Service interactions
 
-From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS).
+From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS) and `orchestrator` to the DSP (simulator).
 
 The applications never call each other directly. They talk through the Temporal Server:
 
@@ -546,6 +597,6 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 |---|---|---|
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
-| `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited |
+| `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; rate limit in 12d)** |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) |
 | `orchestrator` | Kafka | publishes step, device and Batch results |

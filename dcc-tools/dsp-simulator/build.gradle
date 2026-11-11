@@ -1,0 +1,14 @@
+plugins {
+    id 'application'
+}
+
+// No dependencies at runtime: the JDK's own HTTP server and HTTP client are enough.
+dependencies {
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+application {
+    mainClass = 'prepare.edt.dcctools.dspsimulator.DspSimulator'
+}
