@@ -744,6 +744,42 @@ Changes:
 
 To confirm with DCC / the lead: which Facts each SRV yields (depends on the final Flows) and how Parsec is called. **[CONFIRM]**
 
+### Step 15: a signed Manifest in S3 and its message on SQS (dcc-tools, for Batch Ingest)
+
+dcc-tools makes only what Batch Ingest will read (view 100.010). It does not copy DCC's plumbing: there is no
+EventBridge rule and no dead-letter queue.
+
+```
+manifest-upload sample.csv
+  1. SHA-256 of the file, streamed           (MessageDigest, constant memory)
+  2. KMS Sign(digest, DIGEST, ECDSA_SHA_256)  with alias/dcc-manifest  (DCC's key, never leaves KMS)
+  3. S3 PutObject edt-manifests/sample.csv, tag dcc-signature=<base64 DER>  -> new object version
+  4. SQS SendMessage edt-manifest-events: {"detail-type":"Object Created", "detail":{bucket, object{key, size, version-id}}}
+```
+
+| File | What |
+|---|---|
+| `dcc-tools/kms-setup/.../KmsSetup.java` | Also creates the Manifest key `alias/dcc-manifest`, the versioned bucket `edt-manifests` and the queue `edt-manifest-events`. |
+| `dcc-tools/manifest-upload/.../ManifestUpload.java` | Steps 1 to 4. `--bad-signature` signs a different digest, for the negative test. |
+| `samples/manifests/sample.csv` | PLACEHOLDER columns `device_id,device_type,flow`, one row per device. |
+
+Try it (from `dcc-tools/`, Git Bash):
+```bash
+./gradlew installDist && docker compose up -d --build
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv --bad-signature
+```
+Each upload is a new object version, as the model says ("resubmitting a file starts a new Batch").
+
+Verified with the AWS CLI, doing what Batch Ingest will do (get the version, read its tag, KMS Verify the digest):
+the valid version gives `SignatureValid: True`. The bad one gives `KMSInvalidSignatureException`: KMS reports a wrong
+signature as an **error**, not as `false`, so Batch Ingest must treat that exception as "invalid Manifest".
+
+Note: running `kms-setup` again makes a new DSP key. Restart `dsp-simulator`, `orchestrator`, `response-listener` and
+`duis-signer` afterwards.
+
+To confirm with DCC: the Manifest columns, and the signature's tag name and format. **[CONFIRM]**
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),

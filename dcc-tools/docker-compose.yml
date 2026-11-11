@@ -1,5 +1,5 @@
 # The DCC side of the EDT, for local development. In production DCC provides and runs these.
-# For now: Temporal (server, PostgreSQL, UI), Floci (AWS KMS) and the DSP simulator. Kafka comes later.
+# For now: Temporal (server, PostgreSQL, UI), Floci (AWS KMS, S3, SQS) and the DSP simulator. Kafka comes later.
 #
 #   docker network create edt     # once, shared with the root docker-compose.yml
 #   ./gradlew installDist              # from this folder: builds kms-setup and dsp-simulator
@@ -84,15 +84,17 @@ services:
     ports:
       - "8088:8080"   # host 8088 (8080 is taken on this machine)
 
-  # AWS emulator Floci (open source, MIT, no account). For now only KMS is used: it holds the User Role keys.
-  # Everything is in memory: a restart loses the keys, and kms-setup creates new ones.
+  # AWS emulator Floci (open source, MIT, no account). KMS: the User Role keys and DCC's Manifest key.
+  # S3 and SQS: the Manifest bucket and the Manifest events queue.
+  # Everything is in memory: a restart loses keys, Manifests and messages, and kms-setup creates them again.
   # The image has its own healthcheck (/usr/local/bin/healthcheck.sh).
   floci:
     image: floci/floci:2.4.0
     ports:
       - "4566:4566"   # AWS API endpoint: http://localhost:4566 from your machine, http://floci:4566 in Docker
 
-  # One-shot: creates the KMS keys of the two User Roles, the DSP's signing key and the certificate store, then exits.
+  # One-shot: creates the KMS keys of the two User Roles and of DCC's Manifests, the DSP's signing key,
+  # the certificate store, the Manifest bucket and the Manifest events queue, then exits.
   # Build first: ./gradlew :kms-setup:installDist (from dcc-tools/)
   kms-setup:
     build: ./kms-setup
@@ -109,6 +111,8 @@ services:
       EDT_CERT_STORE_PASSWORD: edt-test-only
       EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
       EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
+      EDT_MANIFEST_BUCKET: edt-manifests
+      EDT_MANIFEST_QUEUE: edt-manifest-events
     volumes:
       - ./certs:/certs         # certificates only: the EDT containers mount this
       - ./dsp-keys:/dsp-keys   # the DSP's PRIVATE key: only the DSP simulator mounts this
@@ -135,6 +139,25 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Run on demand (not started by "up"): signs a Manifest with DCC's key, uploads it, puts the message on the queue.
+  #   docker compose run --rm manifest-upload /manifests/sample.csv [--bad-signature]
+  # Build first: ./gradlew :manifest-upload:installDist (from dcc-tools/)
+  # No depends_on on purpose: "run" would start kms-setup again, which makes a new DSP key.
+  manifest-upload:
+    build: ./manifest-upload
+    image: edt/manifest-upload:local
+    profiles: ["tools"]
+    environment:
+      EDT_AWS_ENDPOINT: http://floci:4566
+      AWS_REGION: eu-west-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      EDT_MANIFEST_BUCKET: edt-manifests
+      EDT_MANIFEST_QUEUE: edt-manifest-events
+      EDT_MANIFEST_KEY: alias/dcc-manifest
+    volumes:
+      - ../samples/manifests:/manifests:ro
 
 networks:
   default:

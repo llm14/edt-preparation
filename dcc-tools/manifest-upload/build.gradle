@@ -1,0 +1,18 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation platform(libs.awssdk.bom)
+    implementation libs.awssdk.kms   // sign the Manifest's digest with DCC's Manifest key
+    implementation libs.awssdk.s3    // upload it, with the signature as an object tag
+    implementation libs.awssdk.sqs   // put the "object created" message on the queue
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+application {
+    mainClass = 'prepare.edt.dcctools.manifestupload.ManifestUpload'
+}

@@ -32,6 +32,10 @@ import software.amazon.awssdk.services.kms.KmsClient;
 import software.amazon.awssdk.services.kms.model.KeySpec;
 import software.amazon.awssdk.services.kms.model.KeyUsageType;
 import software.amazon.awssdk.services.kms.model.NotFoundException;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.BucketAlreadyOwnedByYouException;
+import software.amazon.awssdk.services.s3.model.BucketVersioningStatus;
+import software.amazon.awssdk.services.sqs.SqsClient;
 
 /**
  * Plays DCC's part for local development: creates the User Role keys in KMS (Floci) and the certificate store.
@@ -42,7 +46,10 @@ import software.amazon.awssdk.services.kms.model.NotFoundException;
  *   3. For each role, a certificate holding the KMS public key, signed by the test CA.
  *   4. The DSP's signing key (the DSP is outside the EDT and not in KMS: a software key pair) and its certificate.
  *      The private key goes into a SEPARATE keystore that only the DSP simulator mounts.
- *   5. The certificate store: a PKCS#12 file with the certificates only (no private keys): the User Roles
+ *   5. For the Manifests: DCC's Manifest signing key in KMS ("alias/dcc-manifest"), the Manifest bucket (versioned:
+ *      each upload is a new object version) and the queue on which Batch Ingest receives "object created" messages.
+ *      No EventBridge rule and no dead-letter queue: those are DCC's plumbing, the EDT only sees the queue.
+ *   6. The certificate store: a PKCS#12 file with the certificates only (no private keys): the User Roles
  *      (for the DUIS Signer) and the trusted DSP signing certificate (for the Orchestrator and the Response Listener).
  *      The EDT containers mount it read-only.
  *
@@ -56,6 +63,8 @@ import software.amazon.awssdk.services.kms.model.NotFoundException;
  *   EDT_CERT_STORE_PASSWORD password of the certificate store
  *   EDT_DSP_KEYSTORE        output file for the DSP's private key, for example /dsp-keys/dsp-signing.p12
  *   EDT_DSP_KEYSTORE_PASSWORD password of that keystore
+ *   EDT_MANIFEST_BUCKET     Manifest bucket name, for example edt-manifests
+ *   EDT_MANIFEST_QUEUE      Manifest events queue name, for example edt-manifest-events
  */
 public final class KmsSetup {
 
@@ -68,6 +77,7 @@ public final class KmsSetup {
     static final String DSP_ALIAS = "dsp";
     static final String DSP_SUBJECT = "CN=DSP Signing (TEST)";
     static final Duration VALIDITY = Duration.ofDays(30);
+    static final String MANIFEST_KEY_ALIAS = "alias/dcc-manifest";
 
     public static void main(String[] args) throws Exception {
         Path storeFile = Path.of(env("EDT_CERT_STORE"));
@@ -112,8 +122,36 @@ public final class KmsSetup {
             write(dspKeystore, dspKeystoreFile, dspPassword);
             System.out.printf("dsp_keystore=%s certificate=\"%s\"%n", dspKeystoreFile, DSP_SUBJECT);
 
+            // The Manifests: DCC's signing key, the bucket and the queue.
+            String manifestKeyId = findOrCreateKey(kms, MANIFEST_KEY_ALIAS);
+            System.out.printf("manifest_kms_alias=%s kms_key_id=%s%n", MANIFEST_KEY_ALIAS, manifestKeyId);
+            createManifestBucketAndQueue();
+
             write(store, storeFile, storePassword);
             System.out.printf("certificate_store=%s entries=%d%n", storeFile, store.size());
+        }
+    }
+
+    /** Both calls are idempotent: running setup twice keeps the bucket, its objects and the queue. */
+    static void createManifestBucketAndQueue() {
+        URI endpoint = URI.create(env("EDT_KMS_ENDPOINT"));   // Floci serves every AWS service on one endpoint
+        Region region = Region.of(env("AWS_REGION"));
+        String bucket = env("EDT_MANIFEST_BUCKET");
+        String queue = env("EDT_MANIFEST_QUEUE");
+
+        // Path-style URLs (http://floci:4566/bucket/key): an emulator has no DNS name per bucket.
+        try (S3Client s3 = S3Client.builder().endpointOverride(endpoint).region(region).forcePathStyle(true).build();
+             SqsClient sqs = SqsClient.builder().endpointOverride(endpoint).region(region).build()) {
+            try {
+                s3.createBucket(r -> r.bucket(bucket)
+                        .createBucketConfiguration(c -> c.locationConstraint(region.id())));
+            } catch (BucketAlreadyOwnedByYouException e) {
+                // created by an earlier run
+            }
+            s3.putBucketVersioning(r -> r.bucket(bucket)
+                    .versioningConfiguration(v -> v.status(BucketVersioningStatus.ENABLED)));
+            String queueUrl = sqs.createQueue(r -> r.queueName(queue)).queueUrl();
+            System.out.printf("manifest_bucket=%s versioning=Enabled manifest_queue=%s%n", bucket, queueUrl);
         }
     }
 
