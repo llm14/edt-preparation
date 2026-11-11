@@ -1,6 +1,7 @@
 package prepare.edt.orchestrator.adapter;
 
 import io.temporal.activity.ActivityOptions;
+import io.temporal.common.Priority;
 import io.temporal.common.RetryOptions;
 import io.temporal.failure.ActivityFailure;
 import io.temporal.workflow.Workflow;
@@ -15,7 +16,7 @@ import prepare.edt.orchestrator.entity.DccAlerts;
  *
  *   1. build the unsigned request            RequestBuilderActivity   (orchestrator queue)
  *   2. sign it                               Sign                     (DUIS Signer's queue)
- *   3. send it once                          DuisSenderActivity       (send queue, 1 attempt)
+ *   3. send it once                          DuisSenderActivity       (send queue, 1 attempt, fair by Batch)
  *   4. wait for the Response or a DCC Alert  signal "DspMessage"      (up to the response timeout)
  *
  * Never sends again: refused, rejected, send failure, N12/N13 and timeout all end it as failed.
@@ -29,7 +30,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
 
     private final RequestBuilderActivity builder;
     private final SignActivity signer;
-    private final DuisSenderActivity sender;
+    private final String sendTaskQueue;
     private final Duration responseTimeout;
 
     /** Messages signalled by the Response Listener, in arrival order. They may arrive at any time, even before send. */
@@ -45,11 +46,23 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
                 .setStartToCloseTimeout(Duration.ofSeconds(30))
                 .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(3).build())
                 .build());
-        this.sender = Workflow.newActivityStub(DuisSenderActivity.class, ActivityOptions.newBuilder()
+        this.sendTaskQueue = sendTaskQueue;
+    }
+
+    /**
+     * The sender stub is made per run, because its fairness key is the Batch ID from the input.
+     *
+     * The send queue's rate limit (set on its worker) is shared by every Batch. With a fairness key, the Temporal
+     * Server keeps one virtual queue per Batch and takes from them in turn, so a large Batch does not hold up a small one.
+     */
+    private DuisSenderActivity sender(String batchId) {
+        return Workflow.newActivityStub(DuisSenderActivity.class, ActivityOptions.newBuilder()
                 .setTaskQueue(sendTaskQueue)
+                // Only start-to-close: the wait in the rate-limited queue does not count against it.
                 .setStartToCloseTimeout(Duration.ofSeconds(60))
                 // Posts once: no retry of its own. The DSP HTTPS Gateway retries transient errors.
                 .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(1).build())
+                .setPriority(Priority.newBuilder().setFairnessKey(batchId).build())
                 .build());
     }
 
@@ -66,7 +79,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
 
         SyncResponse syncResponse;
         try {
-            syncResponse = sender.send(signed.signedServiceRequest());
+            syncResponse = sender(input.batchId()).send(signed.signedServiceRequest());
         } catch (ActivityFailure e) {
             return outcome(ServiceRequestOutcome.SEND_FAILED, requestId, null, null, rootMessage(e));
         }

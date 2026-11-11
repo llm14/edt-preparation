@@ -3,6 +3,26 @@
 limit.maxIDLength:
   - value: 255
     constraints: {}
+# Task queue fairness (off by default on a self-hosted server): the server shares a queue's dispatch
+# between fairness keys. The EDT uses the Batch ID as the key on the duis-send queue.
+matching.enableFairness:
+  - value: true
+    constraints:
+      namespace: edt
+# Partitions: the server splits each task queue into 4 partitions by default, and the queue's rate limit
+# is shared between them. With a small local load the backlog sits unevenly in the partitions, so the real
+# rate drops well below the limit (seen in step 12d: 0.25/s with a 1/s limit). One partition for duis-send
+# locally gives the exact rate. In production DCC sizes partitions for the real load.
+matching.numTaskqueueReadPartitions:
+  - value: 1
+    constraints:
+      namespace: edt
+      taskQueueName: duis-send
+matching.numTaskqueueWritePartitions:
+  - value: 1
+    constraints:
+      namespace: edt
+      taskQueueName: duis-send
 system.forceSearchAttributesCacheRefreshOnRead:
   - value: true # Dev setup only.
     constraints: {}

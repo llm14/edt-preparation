@@ -1,5 +1,6 @@
 {
   "requestId": "90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1",
+  "batchId": "sample-batch",
   "originator": "90-B3-D5-1F-30-01-00-01",
   "targetDevice": "00-DB-12-34-56-78-90-A0",
   "deviceType": "ESME",

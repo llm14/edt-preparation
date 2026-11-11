@@ -13,4 +13,10 @@ public interface ServiceRequestConfig {
 
     /** The DSP HTTPS Gateway's endpoint for Service Requests (plain HTTP; the gateway does the TLS to the DSP). */
     URI gatewayUrl();
+
+    /**
+     * Maximum Service Requests per second sent to the DSP, across all Orchestrator replicas (property
+     * "send-rate-per-second"). The Temporal Server enforces it on the send task queue. [CONFIRM] the value with DCC.
+     */
+    double sendRatePerSecond();
 }

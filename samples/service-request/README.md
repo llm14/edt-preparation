@@ -1,6 +1,6 @@
 Inputs for the `ServiceRequest` workflow (PLACEHOLDER data). The last group of `targetDevice` tells the
 DSP simulator what to do (see `dcc-tools/dsp-simulator/.../DeviceBehaviour.java`).
-The workflow ID must be `service-request-` + `requestId`, as the Flow will do.
+The workflow ID must be `service-request-` + `requestId`, as the Flow will do. `batchId` is the fairness key on the send queue (12d).
 
 | File | DSP simulator does | Outcome without a Response Listener (12b) | With it (12c, verified) |
 |---|---|---|---|

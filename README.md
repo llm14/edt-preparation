@@ -618,6 +618,47 @@ Key ideas:
 - **A signal for an ended workflow fails**: that is how orphans are detected, with no table of our own.
 - Not yet: the DSP signature check (needs a DSP key and certificate in dcc-tools).
 
+### Step 12d: rate limit and fairness on the send queue
+
+Every Service Request of every Batch leaves the EDT through one task queue, `duis-send`. The model asks for two things:
+- a **global rate limit**: at most N per second to the DSP, across all workflows and all replicas;
+- **fairness by Batch**: a large Batch does not hold up a small one.
+
+Both are done by the Temporal Server, not by our code:
+
+| What | Where | How |
+|---|---|---|
+| Send rate limit (1/s locally) | `orchestrator/.../infrastructure/TemporalWorker.java` | `WorkerOptions.setMaxTaskQueueActivitiesPerSecond(...)` on the `duis-send` worker |
+| Signing rate limit (10/s locally, KMS quota) | `duis-signer/.../infrastructure/TemporalWorker.java` | the same, on the `duis-signing` worker |
+| Fairness key = Batch ID | `orchestrator/.../adapter/ServiceRequestWorkflowImpl.java` | `ActivityOptions.setPriority(Priority.newBuilder().setFairnessKey(batchId))` on the sender stub |
+| Fairness switched on | `dcc-tools/temporal/dynamicconfig/development-sql.yaml` | `matching.enableFairness: true` (off by default when self-hosted) |
+
+Config: `edt.service-request.send-rate-per-second=1`, `edt.temporal.signing-rate-per-second=10`. Both **[CONFIRM]** with DCC.
+`ServiceRequestInput` now has a `batchId` (the Batch workflow will pass it; for now the samples do).
+
+- `setMaxTaskQueueActivitiesPerSecond` limits the **whole queue**, and the server enforces it. Two replicas at 1/s
+  still send 1/s in total. (`setMaxWorkerActivitiesPerSecond` would limit each worker alone, so more replicas would mean
+  more requests.) Every replica must use the same value.
+- With a fairness key, the server keeps one virtual queue per Batch and takes from them in turn.
+- The rate limit says *how many* per second; fairness says *whose turn* it is.
+
+Try it: `bash samples/rate-limit/run.sh` starts 40 requests of Batch `big`, then 2 of Batch `small`, and prints
+the order in which the DSP simulator received them. Measured:
+
+| | `small` sent as | waited |
+|---|---|---|
+| fairness on | 13th and 15th (about 28 `big` still waiting) | ~1 s |
+| fairness off | 41st and 42nd (behind all of `big`) | ~30 s |
+
+What I learned while testing:
+- **Partitions.** The server splits each task queue into 4 partitions by default and shares the rate between them.
+  With a small load the backlog sits unevenly, so the real rate fell to 0.25/s with a 1/s limit. Locally `duis-send`
+  has 1 partition (dynamic config), and the rate is exactly 1/s. In production DCC sizes partitions for the load. **[CONFIRM]**
+- **Do not toggle fairness on a busy queue.** Switching it on and off without a restart gave mixed results.
+  Temporal documents a migration setting (`matching.enableMigration`) for switching a live queue.
+- The test `the_send_is_keyed_by_batch_for_fairness` checks only that the key is set. The in-memory test server does
+  not enforce rate limits or fairness, so the behaviour is shown with the real server.
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),
@@ -642,6 +683,6 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 |---|---|---|
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
-| `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; rate limit in 12d)** |
+| `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; 1/s, fair by Batch)** |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working; DSP signature check later)** |
 | `orchestrator` | Kafka | publishes step, device and Batch results |

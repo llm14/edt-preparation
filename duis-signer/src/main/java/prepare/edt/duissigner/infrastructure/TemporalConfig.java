@@ -17,4 +17,10 @@ public interface TemporalConfig {
 
     /** Task queue this worker polls (property "task-queue"). */
     String taskQueue();
+
+    /**
+     * Maximum Sign activities per second on the task queue, across all signer replicas (property
+     * "signing-rate-per-second"). Keeps KMS Sign calls within the KMS request quota. [CONFIRM] the quota.
+     */
+    double signingRatePerSecond();
 }

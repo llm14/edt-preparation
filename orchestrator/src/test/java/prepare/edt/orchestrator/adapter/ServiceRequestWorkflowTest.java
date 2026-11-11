@@ -3,6 +3,7 @@ package prepare.edt.orchestrator.adapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.temporal.activity.Activity;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
@@ -32,7 +33,7 @@ class ServiceRequestWorkflowTest {
     static final Duration RESPONSE_TIMEOUT = Duration.ofMinutes(2);
 
     static final ServiceRequestInput INPUT = new ServiceRequestInput(
-            RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value(),
+            RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value(), "batch-1",
             "90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", "ESME", "4.1.1");
 
     TestWorkflowEnvironment env;
@@ -40,6 +41,7 @@ class ServiceRequestWorkflowTest {
     Worker senderWorker;
     final List<String> sent = new ArrayList<>();
     final AtomicInteger sends = new AtomicInteger();
+    final List<String> fairnessKeys = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -73,6 +75,19 @@ class ServiceRequestWorkflowTest {
         assertTrue(sent.get(0).contains("<RequestId>" + INPUT.requestId() + "</RequestId>"),
                 "the Request Builder writes the Request ID into the request");
         assertTrue(sent.get(0).contains("<Signature/>"), "what is sent is the signed request");
+    }
+
+    @Test
+    void the_send_is_keyed_by_batch_for_fairness() {
+        signerSigns();
+        dspAccepts();
+        env.start();
+
+        ServiceRequestWorkflow workflow = start();
+        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response/>"));
+        result(workflow);
+
+        assertEquals(List.of("batch-1"), fairnessKeys);
     }
 
     @Test
@@ -188,6 +203,7 @@ class ServiceRequestWorkflowTest {
         senderWorker.registerActivitiesImplementations((DuisSenderActivity) signedXml -> {
             sends.incrementAndGet();
             sent.add(signedXml);
+            fairnessKeys.add(Activity.getExecutionContext().getInfo().getPriority().getFairnessKey());
             return new SyncResponse(true, "I0", "accepted");
         });
     }

@@ -5,6 +5,7 @@ import io.quarkus.runtime.StartupEvent;
 import io.temporal.client.WorkflowClient;
 import io.temporal.worker.Worker;
 import io.temporal.worker.WorkerFactory;
+import io.temporal.worker.WorkerOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.time.Duration;
@@ -22,7 +23,7 @@ import prepare.edt.orchestrator.adapter.SignProbeWorkflowImpl;
  *
  * Two workers, one per task queue:
  *   "orchestrator" - the workflows (SignProbe, ServiceRequest) and the Request Builder activity
- *   "duis-send"    - the DUIS Sender activity, shared by all Service Requests (rate limit in a later step)
+ *   "duis-send"    - the DUIS Sender activity, shared by all Service Requests, rate-limited by the server
  *
  * Temporal creates the workflow objects itself, so CDI cannot inject into them:
  * the factories below pass the configuration in instead.
@@ -57,7 +58,13 @@ public class TemporalWorker {
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
         orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl());
 
-        Worker sender = factory.newWorker(sendQueue);
+        // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,
+        // so it holds across all replicas. (setMaxWorkerActivitiesPerSecond would limit each worker alone.)
+        // Every replica must use the same value.
+        double sendRate = serviceRequest.sendRatePerSecond();
+        Worker sender = factory.newWorker(sendQueue, WorkerOptions.newBuilder()
+                .setMaxTaskQueueActivitiesPerSecond(sendRate)
+                .build());
         sender.registerActivitiesImplementations(new DuisSenderActivityImpl(serviceRequest.gatewayUrl()));
 
         factory.start();
@@ -68,7 +75,8 @@ public class TemporalWorker {
                 "temporal.namespace", config.namespace(),
                 "temporal.task_queue", config.taskQueue() + "," + sendQueue,
                 "edt.gateway_url", String.valueOf(serviceRequest.gatewayUrl()),
-                "edt.response_timeout", String.valueOf(responseTimeout))) {
+                "edt.response_timeout", String.valueOf(responseTimeout),
+                "edt.send_rate_per_second", String.valueOf(sendRate))) {
             LOG.info("Temporal workers started");
         }
     }
