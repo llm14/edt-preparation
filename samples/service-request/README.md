@@ -10,3 +10,5 @@ The workflow ID must be `service-request-` + `requestId`, as the Flow will do. `
 | `A3-silent.json` | accept, nothing | TIMED_OUT | TIMED_OUT |
 | `A4-rejected.json` | reject at once | REJECTED_BY_DSP | REJECTED_BY_DSP |
 | `A5-n53-then-respond.json` | accept, N53, then Response | TIMED_OUT | RESPONDED |
+| `A6-tampered-response.json` | accept, then a Response changed after signing (step 13) | - | TIMED_OUT (Response discarded) |
+| `A7-tampered-sync-response.json` | synchronous response changed after signing (step 13) | - | SEND_FAILED (DspSignatureInvalid) |

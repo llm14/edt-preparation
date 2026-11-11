@@ -9,7 +9,7 @@ import org.xml.sax.InputSource;
 /**
  * Reads Service Requests and writes the DSP's messages, in the PLACEHOLDER format (urn:edt:placeholder:duis),
  * not real DUIS. Response codes (I0 accepted, E99 rejected) are placeholders too.
- * The messages are not signed yet: the DSP signature (and its check in the EDT) comes in a later step.
+ * The DSP signs them with DspSigner; the EDT checks that signature.
  */
 final class DspMessages {
 
@@ -56,6 +56,18 @@ final class DspMessages {
                 + element("AlertCode", alertCode)
                 + element("RequestId", requestId)
                 + "</DCCAlert>";
+    }
+
+    /**
+     * Changes a signed message the way an attacker or a fault might: the response code I0 becomes I99.
+     * The signature no longer matches, so the EDT must not trust the message.
+     */
+    static String tamper(String signedXml) {
+        String tampered = signedXml.replaceFirst("<ResponseCode>I0</ResponseCode>", "<ResponseCode>I99</ResponseCode>");
+        if (tampered.equals(signedXml)) {
+            throw new IllegalArgumentException("nothing to tamper with");
+        }
+        return tampered;
     }
 
     private static String text(Document document, String name) {

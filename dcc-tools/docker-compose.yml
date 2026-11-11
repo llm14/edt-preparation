@@ -92,7 +92,7 @@ services:
     ports:
       - "4566:4566"   # AWS API endpoint: http://localhost:4566 from your machine, http://floci:4566 in Docker
 
-  # One-shot: creates the KMS keys of the two User Roles and the certificate store, then exits.
+  # One-shot: creates the KMS keys of the two User Roles, the DSP's signing key and the certificate store, then exits.
   # Build first: ./gradlew :kms-setup:installDist (from dcc-tools/)
   kms-setup:
     build: ./kms-setup
@@ -107,19 +107,29 @@ services:
       AWS_SECRET_ACCESS_KEY: test
       EDT_CERT_STORE: /certs/certificate-store.p12
       EDT_CERT_STORE_PASSWORD: edt-test-only
+      EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
+      EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
     volumes:
-      - ./certs:/certs   # the certificate store, read later by duis-signer
+      - ./certs:/certs         # certificates only: the EDT containers mount this
+      - ./dsp-keys:/dsp-keys   # the DSP's PRIVATE key: only the DSP simulator mounts this
 
   # Plays the DSP HTTPS Gateway, the DSP and the devices. Behaviour by the last group of the target device ID.
   # Build first: ./gradlew :dsp-simulator:installDist (from dcc-tools/)
   dsp-simulator:
     build: ./dsp-simulator
     image: edt/dsp-simulator:local
+    depends_on:
+      kms-setup:
+        condition: service_completed_successfully   # it needs the DSP key that kms-setup writes
     ports:
       - "8090:8090"   # Service Requests: POST http://dsp-simulator:8090/duis/service-requests
     environment:
       EDT_RESPONSE_LISTENER_URL: http://response-listener:8084/duis/responses
       EDT_RESPONSE_DELAY_SECONDS: "5"
+      EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
+      EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
+    volumes:
+      - ./dsp-keys:/dsp-keys:ro
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8090 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
       interval: 5s

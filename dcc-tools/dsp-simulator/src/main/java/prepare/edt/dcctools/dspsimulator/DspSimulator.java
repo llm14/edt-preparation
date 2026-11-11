@@ -9,6 +9,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,14 +21,18 @@ import java.util.concurrent.TimeUnit;
  * Outbound (EDT -> DSP):  POST /duis/service-requests with a signed Service Request.
  *                         Returns the synchronous DUIS response at once (accepted or rejected).
  * Inbound (DSP -> EDT):   later, POSTs the Response or DCC Alert to the Response Listener
- *                         (EDT_RESPONSE_LISTENER_URL), as the gateway does. Retries a few times if it fails,
- *                         because the Response Listener answers 500 when Temporal is unavailable.
+ *                         (EDT_RESPONSE_LISTENER_URL), as the gateway does. Retries a few times on a transient
+ *                         error (no connection, or HTTP 5xx: the Response Listener answers 500 when Temporal is
+ *                         unavailable); an HTTP 4xx means the message was refused, so it is not sent again.
+ * Every message the DSP sends is signed with the DSP's key (DspSigner).
  * What happens depends on the target device ID: see DeviceBehaviour.
  *
  * Configuration (environment variables):
  *   EDT_PORT                   HTTP port (default 8090)
  *   EDT_RESPONSE_LISTENER_URL  where to post Responses and DCC Alerts
  *   EDT_RESPONSE_DELAY_SECONDS delay before each asynchronous message (default 5): the device is not always listening
+ *   EDT_DSP_KEYSTORE           PKCS#12 file with the DSP's signing key (written by kms-setup)
+ *   EDT_DSP_KEYSTORE_PASSWORD  its password
  */
 public final class DspSimulator {
 
@@ -38,17 +43,24 @@ public final class DspSimulator {
     private final Duration responseDelay;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+    private final DspSigner signer;
 
-    DspSimulator(URI responseListener, Duration responseDelay) {
+    DspSimulator(URI responseListener, Duration responseDelay, DspSigner signer) {
         this.responseListener = responseListener;
         this.responseDelay = responseDelay;
+        this.signer = signer;
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) throws Exception {
         int port = Integer.parseInt(env("EDT_PORT", "8090"));
+        var signer = DspSigner.load(
+                Path.of(env("EDT_DSP_KEYSTORE", "/dsp-keys/dsp-signing.p12")),
+                env("EDT_DSP_KEYSTORE_PASSWORD", "edt-test-only").toCharArray(),
+                "dsp");
         var simulator = new DspSimulator(
                 URI.create(env("EDT_RESPONSE_LISTENER_URL", "http://response-listener:8084/duis/responses")),
-                Duration.ofSeconds(Long.parseLong(env("EDT_RESPONSE_DELAY_SECONDS", "5"))));
+                Duration.ofSeconds(Long.parseLong(env("EDT_RESPONSE_DELAY_SECONDS", "5"))),
+                signer);
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/duis/service-requests", simulator::handleServiceRequest);
@@ -81,9 +93,13 @@ public final class DspSimulator {
         log("event.action=service-request-received request_id=%s target=%s behaviour=%s accepted=%s",
                 request.requestId(), request.targetDevice(), behaviour, accepted);
 
-        reply(exchange, 200, "application/xml", DspMessages.syncResponse(request.requestId(), accepted, detail));
+        String syncResponse = signer.sign(DspMessages.syncResponse(request.requestId(), accepted, detail));
+        if (behaviour.tamperSync) {
+            syncResponse = DspMessages.tamper(syncResponse);
+        }
+        reply(exchange, 200, "application/xml", syncResponse);
 
-        if (accepted) {
+        if (accepted && !behaviour.tamperSync) {
             scheduleAsyncMessages(request.requestId(), behaviour);
         }
     }
@@ -93,10 +109,14 @@ public final class DspSimulator {
         long delay = 0;
         for (String message : behaviour.asyncMessages) {
             delay += responseDelay.toMillis();
-            String xml = "RESPONSE".equals(message)
+            String xml = signer.sign("RESPONSE".equals(message)
                     ? DspMessages.response(requestId)
-                    : DspMessages.dccAlert(requestId, message);
-            scheduler.schedule(() -> deliver(requestId, message, xml, 1), delay, TimeUnit.MILLISECONDS);
+                    : DspMessages.dccAlert(requestId, message));
+            if (behaviour.tamperAsync) {
+                xml = DspMessages.tamper(xml);
+            }
+            String toSend = xml;
+            scheduler.schedule(() -> deliver(requestId, message, toSend, 1), delay, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -112,6 +132,12 @@ public final class DspSimulator {
                     HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() / 100 == 2) {
                 log("event.action=delivered request_id=%s message=%s attempt=%d", requestId, kind, attempt);
+                return;
+            }
+            if (response.statusCode() / 100 == 4) {
+                // Refused (for example a bad signature): sending it again would not help.
+                log("event.action=delivery-refused request_id=%s message=%s status=%d", requestId, kind,
+                        response.statusCode());
                 return;
             }
             retryOrDrop(requestId, kind, xml, attempt, "HTTP " + response.statusCode());

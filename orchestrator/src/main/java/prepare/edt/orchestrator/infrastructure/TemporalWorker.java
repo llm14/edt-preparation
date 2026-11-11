@@ -11,6 +11,7 @@ import jakarta.enterprise.event.Observes;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
+import prepare.edt.orchestrator.adapter.DspSignatureVerifier;
 import prepare.edt.orchestrator.adapter.DuisSenderActivityImpl;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
 import prepare.edt.orchestrator.adapter.ServiceRequestWorkflow;
@@ -36,12 +37,15 @@ public class TemporalWorker {
     private final WorkflowClient client;
     private final TemporalConfig config;
     private final ServiceRequestConfig serviceRequest;
+    private final DspSignatureVerifier dspSignatureVerifier;
     private WorkerFactory factory;
 
-    TemporalWorker(WorkflowClient client, TemporalConfig config, ServiceRequestConfig serviceRequest) {
+    TemporalWorker(WorkflowClient client, TemporalConfig config, ServiceRequestConfig serviceRequest,
+                   DspSignatureVerifier dspSignatureVerifier) {
         this.client = client;
         this.config = config;
         this.serviceRequest = serviceRequest;
+        this.dspSignatureVerifier = dspSignatureVerifier;
     }
 
     void onStart(@Observes StartupEvent event) {
@@ -65,7 +69,7 @@ public class TemporalWorker {
         Worker sender = factory.newWorker(sendQueue, WorkerOptions.newBuilder()
                 .setMaxTaskQueueActivitiesPerSecond(sendRate)
                 .build());
-        sender.registerActivitiesImplementations(new DuisSenderActivityImpl(serviceRequest.gatewayUrl()));
+        sender.registerActivitiesImplementations(new DuisSenderActivityImpl(serviceRequest.gatewayUrl(), dspSignatureVerifier));
 
         factory.start();
 

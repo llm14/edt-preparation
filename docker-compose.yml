@@ -31,6 +31,9 @@ services:
     environment:
       EDT_TEMPORAL_TARGET: temporal:7233
       EDT_SERVICE_REQUEST_GATEWAY_URL: http://dsp-simulator:8090/duis/service-requests
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12   # the trusted DSP certificate
+    volumes:
+      - ./dcc-tools/certs:/certs:ro
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8082 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
@@ -59,6 +62,9 @@ services:
     ports: ["8084:8084"]
     environment:
       EDT_TEMPORAL_TARGET: temporal:7233   # it signals workflows through the Temporal Server
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12   # the trusted DSP certificate
+    volumes:
+      - ./dcc-tools/certs:/certs:ro
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8084 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]

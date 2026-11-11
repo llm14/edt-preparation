@@ -24,6 +24,10 @@ import java.util.Enumeration;
  *   getCertificate("other-user") -> the role's certificate, from the certificate store
  *
  * Read-only: keys are created in KMS by DCC (locally by dcc-tools/kms-setup), never through this KeyStore.
+ *
+ * The store also holds the trusted DSP certificate (alias "dsp"), for the Orchestrator and the Response Listener.
+ * This KeyStore reports it as a key entry too, but there is no KMS key behind it: the signer only asks for the
+ * aliases of the two User Roles (edt.signing.aliases), so it is never used here.
  */
 final class KmsKeyStoreSpi extends KeyStoreSpi {
 

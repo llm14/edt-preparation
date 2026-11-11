@@ -3,6 +3,7 @@ package prepare.edt.responselistener.adapter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
+import prepare.edt.responselistener.usecase.DspSignatureCheck;
 import prepare.edt.responselistener.usecase.RouteDspMessage;
 import prepare.edt.responselistener.usecase.WorkflowSignaller;
 
@@ -30,6 +31,19 @@ class DspMessageResourceTest {
     }
 
     @Test
+    void a_bad_dsp_signature_is_400_and_never_signalled() {
+        var signalled = new java.util.concurrent.atomic.AtomicBoolean();
+        DspSignatureCheck invalid = body -> {
+            throw new DspSignatureCheck.InvalidDspSignatureException("signature does not match");
+        };
+        var resource = new DspMessageResource(new RouteDspMessage(invalid, new XmlDspMessageReader(),
+                (id, m) -> signalled.getAndSet(true)));
+
+        assertEquals(400, resource.receive(RESPONSE).getStatus());
+        assertEquals(false, signalled.get());
+    }
+
+    @Test
     void temporal_unreachable_is_500_so_the_gateway_retries() {
         WorkflowSignaller down = (id, m) -> {
             throw new WorkflowSignaller.SignallerUnavailableException("UNAVAILABLE", null);
@@ -39,6 +53,6 @@ class DspMessageResourceTest {
     }
 
     static DspMessageResource resource(WorkflowSignaller signaller) {
-        return new DspMessageResource(new RouteDspMessage(new XmlDspMessageReader(), signaller));
+        return new DspMessageResource(new RouteDspMessage(body -> { }, new XmlDspMessageReader(), signaller));
     }
 }

@@ -14,11 +14,30 @@ class RouteDspMessageTest {
 
     static final DspMessage RESPONSE = new DspMessage(DspMessage.Kind.RESPONSE, "orig:dev:1", null, "<Response/>");
 
+    static final DspSignatureCheck VALID = body -> { };
+
     final List<String> signalledIds = new ArrayList<>();
+    final List<String> readBodies = new ArrayList<>();
+
+    @Test
+    void a_message_with_a_bad_signature_is_neither_read_nor_signalled() {
+        DspSignatureCheck invalid = body -> {
+            throw new DspSignatureCheck.InvalidDspSignatureException("signature does not match");
+        };
+        DspMessageReader reader = body -> {
+            readBodies.add(body);
+            return RESPONSE;
+        };
+        var route = new RouteDspMessage(invalid, reader, signaller(true));
+
+        assertThrows(DspSignatureCheck.InvalidDspSignatureException.class, () -> route.route("<Response/>"));
+        assertEquals(List.of(), readBodies, "nothing is read before the signature is checked");
+        assertEquals(List.of(), signalledIds);
+    }
 
     @Test
     void signals_the_workflow_derived_from_the_request_id() {
-        var route = new RouteDspMessage(body -> RESPONSE, signaller(true));
+        var route = new RouteDspMessage(VALID, body -> RESPONSE, signaller(true));
 
         var result = route.route("<Response/>");
 
@@ -28,7 +47,7 @@ class RouteDspMessageTest {
 
     @Test
     void no_running_workflow_is_an_orphan() {
-        var route = new RouteDspMessage(body -> RESPONSE, signaller(false));
+        var route = new RouteDspMessage(VALID, body -> RESPONSE, signaller(false));
 
         assertInstanceOf(RouteDspMessage.Result.Orphan.class, route.route("<Response/>"));
     }
@@ -38,7 +57,7 @@ class RouteDspMessageTest {
         DspMessageReader failing = body -> {
             throw new DspMessageReader.UnreadableMessageException("bad", null);
         };
-        var route = new RouteDspMessage(failing, signaller(true));
+        var route = new RouteDspMessage(VALID, failing, signaller(true));
 
         assertThrows(DspMessageReader.UnreadableMessageException.class, () -> route.route("junk"));
         assertEquals(List.of(), signalledIds);

@@ -40,8 +40,11 @@ import software.amazon.awssdk.services.kms.model.NotFoundException;
  *      The private key is created inside KMS and never leaves it.
  *   2. A test CA (a software key pair, in memory only).
  *   3. For each role, a certificate holding the KMS public key, signed by the test CA.
- *   4. The certificate store: a PKCS#12 file with the certificates only (no private keys),
- *      which the DUIS Signer mounts read-only.
+ *   4. The DSP's signing key (the DSP is outside the EDT and not in KMS: a software key pair) and its certificate.
+ *      The private key goes into a SEPARATE keystore that only the DSP simulator mounts.
+ *   5. The certificate store: a PKCS#12 file with the certificates only (no private keys): the User Roles
+ *      (for the DUIS Signer) and the trusted DSP signing certificate (for the Orchestrator and the Response Listener).
+ *      The EDT containers mount it read-only.
  *
  * Floci keeps everything in memory, so this runs at every start of dcc-tools. TEST keys and certificates only.
  *
@@ -51,6 +54,8 @@ import software.amazon.awssdk.services.kms.model.NotFoundException;
  *   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY   any non-empty value: Floci does not check them
  *   EDT_CERT_STORE          output file, for example /certs/certificate-store.p12
  *   EDT_CERT_STORE_PASSWORD password of the certificate store
+ *   EDT_DSP_KEYSTORE        output file for the DSP's private key, for example /dsp-keys/dsp-signing.p12
+ *   EDT_DSP_KEYSTORE_PASSWORD password of that keystore
  */
 public final class KmsSetup {
 
@@ -60,6 +65,8 @@ public final class KmsSetup {
             "registered-supplier-agent", "CN=EDT Registered Supplier Agent (TEST)");
 
     static final String CA_ALIAS = "edt-test-ca";
+    static final String DSP_ALIAS = "dsp";
+    static final String DSP_SUBJECT = "CN=DSP Signing (TEST)";
     static final Duration VALIDITY = Duration.ofDays(30);
 
     public static void main(String[] args) throws Exception {
@@ -71,7 +78,7 @@ public final class KmsSetup {
                 .region(Region.of(env("AWS_REGION")))
                 .build()) {
 
-            KeyPair ca = generateCaKeyPair();
+            KeyPair ca = generateEcKeyPair();
             X509Certificate caCertificate = certificate("CN=EDT Test CA (TEST)", ca.getPublic(), "CN=EDT Test CA (TEST)",
                     ca.getPrivate(), true);
 
@@ -89,6 +96,21 @@ public final class KmsSetup {
                 System.out.printf("role=%s kms_alias=%s kms_key_id=%s certificate=\"%s\"%n",
                         role.getKey(), kmsAlias, keyId, role.getValue());
             }
+
+            // The DSP: a software key pair, certified by the same test CA.
+            KeyPair dsp = generateEcKeyPair();
+            X509Certificate dspCertificate = certificate(DSP_SUBJECT, dsp.getPublic(), "CN=EDT Test CA (TEST)",
+                    ca.getPrivate(), false);
+            store.setCertificateEntry(DSP_ALIAS, dspCertificate);   // only the certificate goes to the EDT
+
+            Path dspKeystoreFile = Path.of(env("EDT_DSP_KEYSTORE"));
+            char[] dspPassword = env("EDT_DSP_KEYSTORE_PASSWORD").toCharArray();
+            KeyStore dspKeystore = KeyStore.getInstance("PKCS12");
+            dspKeystore.load(null, null);
+            dspKeystore.setKeyEntry(DSP_ALIAS, dsp.getPrivate(), dspPassword,
+                    new X509Certificate[] {dspCertificate, caCertificate});
+            write(dspKeystore, dspKeystoreFile, dspPassword);
+            System.out.printf("dsp_keystore=%s certificate=\"%s\"%n", dspKeystoreFile, DSP_SUBJECT);
 
             write(store, storeFile, storePassword);
             System.out.printf("certificate_store=%s entries=%d%n", storeFile, store.size());
@@ -116,7 +138,7 @@ public final class KmsSetup {
         return KeyFactory.getInstance("EC").generatePublic(new X509EncodedKeySpec(der));
     }
 
-    static KeyPair generateCaKeyPair() throws Exception {
+    static KeyPair generateEcKeyPair() throws Exception {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));
         return generator.generateKeyPair();

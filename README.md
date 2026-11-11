@@ -676,8 +676,45 @@ Temporal SDK --metrics (Tally)--> MicrometerClientStatsReporter --> Quarkus Mete
    - `temporal_activity_execution_latency_seconds{activity_type="Sign"}`: signing time, KMS included;
    - `temporal_request_total{operation="SignalWorkflowExecution"}`: signals sent by the Response Listener.
 
-Still open from that check: the DSP signature check (steps 13 and 18, and the certificate store in the Orchestrator
-and the Response Listener), and the Response Decoder with its Facts (steps 20 to 22).
+Still open from that check: the DSP signature check (done in step 13), and the Response Decoder with its Facts
+(steps 20 to 22).
+
+### Step 13: the DSP signature check (model 010.030, steps 13 and 18)
+
+The EDT trusts a message from the DSP only after checking its XML signature with the **trusted DSP certificate**
+from the certificate store. Two places check it, as the model says:
+
+| Where | What | If the signature is bad |
+|---|---|---|
+| `orchestrator/.../adapter/DuisSenderActivityImpl.java` | the synchronous DUIS response | security event; non-retryable failure `DspSignatureInvalid`; workflow `SEND_FAILED` (never sent again) |
+| `response-listener/.../usecase/RouteDspMessage.java` | each Response and DCC Alert, **before** reading anything in it | security event; discarded; HTTP 400; nothing signalled |
+
+```
+kms-setup --DSP private key--> dcc-tools/dsp-keys/dsp-signing.p12  (mounted ONLY into dsp-simulator)
+          --DSP certificate--> dcc-tools/certs/certificate-store.p12, alias "dsp"  (mounted read-only into the EDT apps)
+dsp-simulator signs every message --> orchestrator / response-listener check it with that certificate
+```
+
+| File | What it does |
+|---|---|
+| `.../adapter/DspSignatureVerifier.java` (own copy in each app) | One `ds:Signature`, child of the root; one Reference with URI `""` and the enveloped transform (it covers the whole message); ECDSA-SHA256; valid for the **trusted** key. The certificate inside the message is ignored. JDK secure validation on. |
+| `.../infrastructure/DspCertificateWiring.java` | Loads the certificate (JCA `KeyStore` PKCS12) at startup (`@Startup`); missing = the app does not start. |
+| `response-listener/.../usecase/DspSignatureCheck.java` | The port: the use case checks first, then reads. |
+| `dcc-tools/dsp-simulator/.../DspSigner.java` | The simulated DSP signs like the EDT signer (enveloped, ECDSA-SHA256, exclusive C14N). |
+| `dcc-tools/kms-setup/.../KmsSetup.java` | Makes the DSP key pair (software: the DSP is not in KMS) and its certificate from the test CA. |
+
+New simulator behaviours: `-A6` a Response changed after signing (I0 becomes I99), `-A7` a synchronous response
+changed after signing. Results: A6 `TIMED_OUT` (the Response was discarded), A7 `SEND_FAILED`.
+The simulator no longer retries a 4xx answer (refused), only connection errors and 5xx.
+
+Security events go to the logger `edt.security` with `event.kind=alert`, `event.category=intrusion_detection`,
+`event.action=dsp-signature-invalid`. The listener logs nothing from the message itself, because it is not trusted.
+
+Key ideas:
+- **Pin the certificate**: verify with the key you trust, not the one the message brings.
+- **Check before reading**: in the listener even the Request ID is untrusted until the signature is checked.
+- **Keep private keys apart**: the DSP key has its own folder, so no EDT container can see it.
+- To confirm with DCC: the real DSP signature format (DUIS) and how the DSP certificate is renewed. **[CONFIRM]**
 
 ## Service interactions
 
@@ -704,5 +741,5 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; 1/s, fair by Batch)** |
-| `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working; DSP signature check later)** |
+| `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working, after checking the DSP signature)** |
 | `orchestrator` | Kafka | publishes step, device and Batch results |

@@ -4,7 +4,9 @@ import io.temporal.client.WorkflowClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
+import prepare.edt.responselistener.adapter.DspSignatureVerifier;
 import prepare.edt.responselistener.adapter.TemporalWorkflowSignaller;
+import prepare.edt.responselistener.adapter.XmlDspSignatureCheck;
 import prepare.edt.responselistener.adapter.XmlDspMessageReader;
 import prepare.edt.responselistener.usecase.RouteDspMessage;
 
@@ -17,7 +19,8 @@ public class RoutingWiring {
 
     @Produces
     @Singleton
-    RouteDspMessage routeDspMessage(WorkflowClient client) {
-        return new RouteDspMessage(new XmlDspMessageReader(), new TemporalWorkflowSignaller(client));
+    RouteDspMessage routeDspMessage(WorkflowClient client, DspSignatureVerifier verifier) {
+        return new RouteDspMessage(new XmlDspSignatureCheck(verifier), new XmlDspMessageReader(),
+                new TemporalWorkflowSignaller(client));
     }
 }
