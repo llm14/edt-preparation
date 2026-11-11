@@ -17,6 +17,7 @@ services:
   batch-ingest:
     build: ./batch-ingest
     image: edt/batch-ingest:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8081:8081"]
     healthcheck:
       <<: *healthcheck
@@ -25,6 +26,7 @@ services:
   orchestrator:
     build: ./orchestrator
     image: edt/orchestrator:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8082:8082"]
     healthcheck:
       <<: *healthcheck
@@ -33,7 +35,11 @@ services:
   duis-signer:
     build: ./duis-signer
     image: edt/duis-signer:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8083:8083"]
+    environment:
+      # Overrides edt.temporal.target from application.properties (Quarkus maps env vars to properties).
+      EDT_TEMPORAL_TARGET: temporal:7233
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8083 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
@@ -41,6 +47,7 @@ services:
   response-listener:
     build: ./response-listener
     image: edt/response-listener:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8084:8084"]
     healthcheck:
       <<: *healthcheck

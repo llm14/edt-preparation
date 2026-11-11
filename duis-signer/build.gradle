@@ -17,6 +17,9 @@ dependencies {
     // Logs as JSON, one object per line, in ECS format.
     implementation libs.quarkus.logging.json
 
+    // Temporal Java SDK: connects to the Temporal Server and runs as a worker.
+    implementation libs.temporal.sdk
+
     // Tests: JUnit 5 and ArchUnit (architecture rules).
     testImplementation libs.junit.jupiter
     testImplementation libs.archunit

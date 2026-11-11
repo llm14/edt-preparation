@@ -194,6 +194,46 @@ Key ideas:
   wait for the database, then the schema, then the server.
 - Inside the `edt` network the server is `temporal:7233`; from your machine it is `localhost:7233`.
 
+### Step 9: `duis-signer` becomes a Temporal worker
+
+The signer connects to Temporal at startup and polls the task queue `duis-signing`.
+
+| File | What it does |
+|---|---|
+| `infrastructure/TemporalConfig.java` | Reads `edt.temporal.target`, `namespace`, `task-queue` from `application.properties`. |
+| `infrastructure/TemporalConnection.java` | CDI producers: the gRPC connection (`WorkflowServiceStubs`) and the `WorkflowClient` for namespace `edt`. |
+| `infrastructure/TemporalWorker.java` | At startup: creates the worker, registers the Sign activity, starts polling. At shutdown: stops it. |
+| `infrastructure/TemporalReadinessCheck.java` | `/q/health/ready` is `DOWN` when the Temporal Server does not answer. |
+| `adapter/SignActivity.java` | The activity interface. Name fixed as `"Sign"`: Temporal matches activities by name. |
+| `adapter/SignActivityImpl.java` | Placeholder: refuses every request with a non-retryable failure. |
+
+The worker is on the right side of this picture:
+
+```
+orchestrator                    Temporal Server                     duis-signer (worker)
+  schedules "Sign"  ------->    task queue "duis-signing"   <-------  polls the queue
+                                                                      runs SignActivityImpl
+  gets the result   <-------    stores the result           <-------  reports the result
+```
+
+Check that the worker is polling:
+```
+docker run --rm --network edt temporalio/admin-tools:1.32.2 \
+  temporal task-queue describe --task-queue duis-signing --task-queue-type activity --namespace edt --address temporal:7233
+```
+
+Key ideas:
+- **Worker**: a process that polls a task queue and runs the code registered for it. Many workers can poll the same queue.
+- **CDI producer** (`@Produces`): creates beans from library classes that have no CDI annotations.
+- **Configuration**: `localhost:7233` on your machine; in Docker, `EDT_TEMPORAL_TARGET=temporal:7233` overrides it.
+- **Fail fast**: `WorkerFactory.start()` contacts the server. If Temporal is down, the app exits and Docker restarts it
+  (`restart: unless-stopped`) until Temporal is up. If Temporal goes down later, the worker reconnects by itself
+  and readiness reports `DOWN` meanwhile.
+- **Non-retryable failure**: an error Temporal must not retry (retrying would not help).
+- The Quarkus BOM forces some of Temporal's libraries to newer versions (protobuf 3.25 to 4.35). It works so far.
+
+Also fixed in all four applications: the text log format now prints exceptions (`%e`).
+
 ## Service interactions
 
 Planned, from the architecture model. Not implemented yet.
