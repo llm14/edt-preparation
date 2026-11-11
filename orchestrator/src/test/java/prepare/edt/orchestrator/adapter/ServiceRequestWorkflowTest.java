@@ -17,6 +17,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import java.util.Map;
+import prepare.edt.orchestrator.entity.Facts;
 import prepare.edt.orchestrator.entity.RequestId;
 
 /**
@@ -36,6 +38,15 @@ class ServiceRequestWorkflowTest {
             RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value(), "batch-1",
             "90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", "ESME", "4.1.1");
 
+    /** Responses in the simulator's placeholder format, which the PlaceholderResponseDecoder reads. */
+    static final String RESPONSE_XML = response("12345.6");
+    static final String EARLY_RESPONSE_XML = response("7.0");
+
+    static String response(String reading) {
+        return "<Response xmlns=\"urn:edt:placeholder:duis\"><RequestId>R</RequestId><ResponseCode>I0</ResponseCode>"
+                + "<Body><InstantaneousImportRegister>" + reading + "</InstantaneousImportRegister></Body></Response>";
+    }
+
     TestWorkflowEnvironment env;
     Worker signerWorker;
     Worker senderWorker;
@@ -49,7 +60,8 @@ class ServiceRequestWorkflowTest {
         Worker orchestrator = env.newWorker(ORCHESTRATOR_QUEUE);
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(SIGNING_QUEUE, SEND_QUEUE, RESPONSE_TIMEOUT));
-        orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl());
+        orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
+                new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
         signerWorker = env.newWorker(SIGNING_QUEUE);
         senderWorker = env.newWorker(SEND_QUEUE);
     }
@@ -66,15 +78,31 @@ class ServiceRequestWorkflowTest {
         env.start();
 
         ServiceRequestWorkflow workflow = start();
-        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response/>"));
+        signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
 
         ServiceRequestOutcome outcome = result(workflow);
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals("<Response/>", outcome.responseXml());
+        assertEquals(Facts.of(Map.of("InstantaneousImportRegister", "12345.6")), outcome.facts(),
+                "the Response is decoded into Facts");
         assertEquals(1, sends.get());
         assertTrue(sent.get(0).contains("<RequestId>" + INPUT.requestId() + "</RequestId>"),
                 "the Request Builder writes the Request ID into the request");
         assertTrue(sent.get(0).contains("<Signature/>"), "what is sent is the signed request");
+    }
+
+    @Test
+    void a_response_that_cannot_be_decoded_is_decode_failed_and_not_sent_again() {
+        signerSigns();
+        dspAccepts();
+        env.start();
+
+        ServiceRequestWorkflow workflow = start();
+        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response xmlns=\"urn:edt:placeholder:duis\"/>"));
+
+        ServiceRequestOutcome outcome = result(workflow);
+        assertEquals(ServiceRequestOutcome.DECODE_FAILED, outcome.status());
+        assertEquals("the Response has no Body", outcome.detail());
+        assertEquals(1, sends.get());
     }
 
     @Test
@@ -84,7 +112,7 @@ class ServiceRequestWorkflowTest {
         env.start();
 
         ServiceRequestWorkflow workflow = start();
-        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response/>"));
+        signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
         result(workflow);
 
         assertEquals(List.of("batch-1"), fairnessKeys);
@@ -96,7 +124,7 @@ class ServiceRequestWorkflowTest {
         // The "DSP" answers so fast that the signal arrives while the send activity is still running.
         senderWorker.registerActivitiesImplementations((DuisSenderActivity) signedXml -> {
             sends.incrementAndGet();
-            signal(new DspMessage(DspMessage.RESPONSE, null, "<EarlyResponse/>"));
+            signal(new DspMessage(DspMessage.RESPONSE, null, EARLY_RESPONSE_XML));
             return new SyncResponse(true, "I0", "accepted");
         });
         env.start();
@@ -104,7 +132,7 @@ class ServiceRequestWorkflowTest {
         ServiceRequestOutcome outcome = result(start());
 
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals("<EarlyResponse/>", outcome.responseXml());
+        assertEquals("7.0", outcome.facts().values().get("InstantaneousImportRegister"));
     }
 
     @Test
@@ -130,7 +158,7 @@ class ServiceRequestWorkflowTest {
 
         ServiceRequestWorkflow workflow = start();
         signal(new DspMessage(DspMessage.DCC_ALERT, "N53", "<Alert/>"));
-        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response/>"));
+        signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
 
         assertEquals(ServiceRequestOutcome.RESPONDED, result(workflow).status());
     }

@@ -2,7 +2,7 @@ Inputs for the `ServiceRequest` workflow (PLACEHOLDER data). The last group of `
 DSP simulator what to do (see `dcc-tools/dsp-simulator/.../DeviceBehaviour.java`).
 The workflow ID must be `service-request-` + `requestId`, as the Flow will do. `batchId` is the fairness key on the send queue (12d).
 
-| File | DSP simulator does | Outcome without a Response Listener (12b) | With it (12c, verified) |
+| File | DSP simulator does | Outcome without a Response Listener (12b) | With it (12c, verified; RESPONDED carries the Facts since step 14) |
 |---|---|---|---|
 | `A0-respond.json` | accept, Response after 5 s | TIMED_OUT | RESPONDED |
 | `A1-n12.json` | accept, DCC Alert N12 | TIMED_OUT | FAILED_ALERT |

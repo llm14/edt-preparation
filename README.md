@@ -716,6 +716,34 @@ Key ideas:
 - **Keep private keys apart**: the DSP key has its own folder, so no EDT container can see it.
 - To confirm with DCC: the real DSP signature format (DUIS) and how the DSP certificate is renewed. **[CONFIRM]**
 
+### Step 14: the Response Decoder and the Facts (model 010.030, steps 20 to 22)
+
+When the Response arrives, the Service Request workflow has it decoded and returns **the outcome and the Facts**
+to its caller (the Flow, later). Facts are the values from the Response that the Flow decides on.
+
+```
+Service Request workflow --DecodeResponse(srv, Response)--> ResponseDecoderActivity --> ResponseDecoder port
+                         <--Facts {InstantaneousImportRegister=12345.6}--
+outcome: {"status":"RESPONDED","facts":{"values":{"InstantaneousImportRegister":"12345.6"}}, ...}
+```
+
+| File | What it does |
+|---|---|
+| `orchestrator/.../entity/Facts.java` | Name -> value, sorted, immutable. |
+| `.../usecase/ResponseDecoder.java` | The port. In the model this is **Parsec** (CSW software, GBCS decoding), which we do not have. |
+| `.../adapter/PlaceholderResponseDecoder.java` | PLACEHOLDER: each simple element of the placeholder Response `Body` becomes a Fact. |
+| `.../adapter/ResponseDecoderActivityImpl.java` | Activity `DecodeResponse`; logs `response-decoded` (the model's "each Response decoded"); a payload it cannot decode fails with non-retryable `ResponseNotDecodable`. |
+| `.../adapter/ServiceRequestWorkflowImpl.java` | After the Response: decode, then return `RESPONDED` with the Facts, or `DECODE_FAILED`. |
+
+Changes:
+- `ServiceRequestOutcome` returns `facts` instead of the Response XML: the model returns "outcome and Facts", and
+  Temporal histories stay smaller.
+- New status `DECODE_FAILED`: the device answered, but the Response could not be decoded. It is not sent again.
+- Failure details now show the original message (for example A7: "DSP signature on the synchronous response is not
+  valid: signature does not match"), without Temporal's `message='...', type='...'` wrapper.
+
+To confirm with DCC / the lead: which Facts each SRV yields (depends on the final Flows) and how Parsec is called. **[CONFIRM]**
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),

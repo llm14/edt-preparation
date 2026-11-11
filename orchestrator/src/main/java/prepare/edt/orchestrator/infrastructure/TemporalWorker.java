@@ -13,7 +13,9 @@ import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import prepare.edt.orchestrator.adapter.DspSignatureVerifier;
 import prepare.edt.orchestrator.adapter.DuisSenderActivityImpl;
+import prepare.edt.orchestrator.adapter.PlaceholderResponseDecoder;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
+import prepare.edt.orchestrator.adapter.ResponseDecoderActivityImpl;
 import prepare.edt.orchestrator.adapter.ServiceRequestWorkflow;
 import prepare.edt.orchestrator.adapter.ServiceRequestWorkflowImpl;
 import prepare.edt.orchestrator.adapter.SignProbeWorkflow;
@@ -23,7 +25,7 @@ import prepare.edt.orchestrator.adapter.SignProbeWorkflowImpl;
  * Starts the Orchestrator's Temporal workers when the application starts, and stops them at shutdown.
  *
  * Two workers, one per task queue:
- *   "orchestrator" - the workflows (SignProbe, ServiceRequest) and the Request Builder activity
+ *   "orchestrator" - the workflows (SignProbe, ServiceRequest) and the Request Builder and Response Decoder activities
  *   "duis-send"    - the DUIS Sender activity, shared by all Service Requests, rate-limited by the server
  *
  * Temporal creates the workflow objects itself, so CDI cannot inject into them:
@@ -60,7 +62,9 @@ public class TemporalWorker {
                 () -> new SignProbeWorkflowImpl(signingQueue));
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
-        orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl());
+        // PLACEHOLDER decoder: Parsec (CSW software) goes behind the same ResponseDecoder port.
+        orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
+                new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
 
         // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,
         // so it holds across all replicas. (setMaxWorkerActivitiesPerSecond would limit each worker alone.)

@@ -4,12 +4,14 @@ import io.temporal.activity.ActivityOptions;
 import io.temporal.common.Priority;
 import io.temporal.common.RetryOptions;
 import io.temporal.failure.ActivityFailure;
+import io.temporal.failure.ApplicationFailure;
 import io.temporal.workflow.Workflow;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import org.slf4j.Logger;
 import prepare.edt.orchestrator.entity.DccAlerts;
+import prepare.edt.orchestrator.entity.Facts;
 
 /**
  * The Service Request workflow (architecture model, sequence 010.030):
@@ -18,6 +20,7 @@ import prepare.edt.orchestrator.entity.DccAlerts;
  *   2. sign it                               Sign                     (DUIS Signer's queue)
  *   3. send it once                          DuisSenderActivity       (send queue, 1 attempt, fair by Batch)
  *   4. wait for the Response or a DCC Alert  signal "DspMessage"      (up to the response timeout)
+ *   5. decode the Response into Facts        ResponseDecoderActivity  (orchestrator queue)
  *
  * Never sends again: refused, rejected, send failure, N12/N13 and timeout all end it as failed.
  *
@@ -29,6 +32,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
     private static final Logger LOG = Workflow.getLogger(ServiceRequestWorkflowImpl.class);
 
     private final RequestBuilderActivity builder;
+    private final ResponseDecoderActivity decoder;
     private final SignActivity signer;
     private final String sendTaskQueue;
     private final Duration responseTimeout;
@@ -40,6 +44,11 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
         this.responseTimeout = responseTimeout;
         this.builder = Workflow.newActivityStub(RequestBuilderActivity.class, ActivityOptions.newBuilder()
                 .setStartToCloseTimeout(Duration.ofSeconds(10))
+                .build());
+        this.decoder = Workflow.newActivityStub(ResponseDecoderActivity.class, ActivityOptions.newBuilder()
+                .setStartToCloseTimeout(Duration.ofSeconds(30))
+                // Retries help only with a crash of the worker; "ResponseNotDecodable" is never retried.
+                .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(3).build())
                 .build());
         this.signer = Workflow.newActivityStub(SignActivity.class, ActivityOptions.newBuilder()
                 .setTaskQueue(signingTaskQueue)
@@ -88,11 +97,11 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
                     syncResponse.responseCode() + " " + syncResponse.detail());
         }
 
-        return waitForResponse(requestId);
+        return waitForResponse(requestId, input.srv());
     }
 
     /** Waits until a Response or a failing DCC Alert arrives, or the timeout ends. Other alerts are logged and skipped. */
-    private ServiceRequestOutcome waitForResponse(String requestId) {
+    private ServiceRequestOutcome waitForResponse(String requestId, String srv) {
         long deadline = Workflow.currentTimeMillis() + responseTimeout.toMillis();
         while (true) {
             long remaining = deadline - Workflow.currentTimeMillis();
@@ -103,7 +112,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
             }
             DspMessage message = messages.poll();
             if (DspMessage.RESPONSE.equals(message.type())) {
-                return outcome(ServiceRequestOutcome.RESPONDED, requestId, message.xml(), null, null);
+                return decode(requestId, srv, message.xml());
             }
             if (DccAlerts.failsServiceRequest(message.alertCode())) {
                 return outcome(ServiceRequestOutcome.FAILED_ALERT, requestId, null, message.alertCode(),
@@ -113,22 +122,33 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
         }
     }
 
+    /** The Response arrived: decode it into Facts (model 010.030, steps 20 and 21). */
+    private ServiceRequestOutcome decode(String requestId, String srv, String responseXml) {
+        try {
+            Facts facts = decoder.decode(srv, responseXml);
+            return outcome(ServiceRequestOutcome.RESPONDED, requestId, facts, null, null);
+        } catch (ActivityFailure e) {
+            return outcome(ServiceRequestOutcome.DECODE_FAILED, requestId, null, null, rootMessage(e));
+        }
+    }
+
     @Override
     public void onDspMessage(DspMessage message) {
         messages.add(message);
     }
 
-    private static ServiceRequestOutcome outcome(String status, String requestId, String responseXml,
+    private static ServiceRequestOutcome outcome(String status, String requestId, Facts facts,
                                                  String alertCode, String detail) {
         LOG.info("Service Request {} ended: {}", requestId, status);
-        return new ServiceRequestOutcome(status, requestId, responseXml, alertCode, detail);
+        return new ServiceRequestOutcome(status, requestId, facts, alertCode, detail);
     }
 
+    /** The message of the deepest cause; for an ApplicationFailure, its original text (getMessage adds the type). */
     private static String rootMessage(Throwable e) {
         Throwable root = e;
         while (root.getCause() != null) {
             root = root.getCause();
         }
-        return root.getMessage();
+        return root instanceof ApplicationFailure failure ? failure.getOriginalMessage() : root.getMessage();
     }
 }
