@@ -272,6 +272,39 @@ Key ideas:
 - **Retries**: set per activity call. A non-retryable failure is never retried (the test checks it).
 - **Event history**: everything that happened, stored by the Temporal Server. It is how Temporal recovers after a crash.
 
+### Step 11a: signing logic, the core (entities and use case)
+
+Only plain Java: no Quarkus, Temporal, XML or keys. The outside world is reached through **ports** (interfaces).
+
+```
+SignServiceRequest (use case)
+  1. ServiceRequestReader.read(xml)    port: parse XML, check schema      -> adapter in 11b
+  2. SigningPolicy.decide(request)     entity: role, or refuse
+  3. Signer.sign(xml, role)            port: sign with the role's key     -> adapters in 11b (software), 11c (KMS)
+  4. AuditLog.record(event)            port: one event per decision       -> adapter in 11d
+```
+
+| File (in `duis-signer`) | What it is |
+|---|---|
+| `entity/UserRole`, `ServiceRequest`, `SigningDecision` | The core concepts. |
+| `entity/SigningPolicy` | The rule: SRV allowlist, role choice (Other User when both may), originator, device type. |
+| `usecase/SignServiceRequest` | Runs the 4 steps. Returns `Signed` or `Refused`. |
+| `usecase/ServiceRequestReader`, `Signer`, `AuditLog` | The ports. |
+| `src/test/.../SigningPolicyTest`, `SignServiceRequestTest` | Plain JUnit with hand-written fakes. |
+
+Rules the tests check:
+- A refused request never reaches the signer.
+- Every decision (signed or refused) is audited.
+- If the audit fails, no signed request is returned.
+- A technical error (signing service down) propagates, so Temporal can retry. It is not audited: it is not a decision.
+
+Key ideas:
+- **Ports and adapters**: the use case declares what it needs; adapters (outer layers) provide it.
+- **Sealed interfaces**: `SigningDecision` and `SignResult` have a fixed set of cases; `switch` must handle them all.
+- **PLACEHOLDER data**: SRV codes, User IDs and allowlists in the tests are invented until DCC provides the real ones.
+- **To confirm with DCC**: the role is chosen from the SRV, then the originator must be that role's User ID.
+- `allowEmptyShould` is gone from the signer's architecture test: its inner layers now have classes.
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
