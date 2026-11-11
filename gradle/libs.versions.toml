@@ -5,11 +5,18 @@
 quarkus = "3.40.1.2"
 temporal = "1.40.0"
 archunit = "1.5.1"
+awssdk = "2.57.13"
+bouncycastle = "1.87"
 
 [libraries]
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
 temporal-testing = { module = "io.temporal:temporal-testing", version.ref = "temporal" }
+
+# AWS SDK: its BOM fixes the version of every AWS module (not managed by the Quarkus BOM).
+awssdk-bom = { module = "software.amazon.awssdk:bom", version.ref = "awssdk" }
+awssdk-kms = { module = "software.amazon.awssdk:kms" }
+awssdk-url-connection-client = { module = "software.amazon.awssdk:url-connection-client" }
 
 # Quarkus extensions: no version here, the Quarkus BOM decides it.
 quarkus-arc = { module = "io.quarkus:quarkus-arc" }
@@ -21,6 +28,11 @@ quarkus-logging-json = { module = "io.quarkus:quarkus-logging-json" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 archunit = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+# Testcontainers versions come from the Quarkus BOM.
+testcontainers = { module = "org.testcontainers:testcontainers" }
+testcontainers-junit-jupiter = { module = "org.testcontainers:testcontainers-junit-jupiter" }
+# BouncyCastle: tests only, to build a certificate for a KMS key.
+bouncycastle-pkix = { module = "org.bouncycastle:bcpkix-jdk18on", version.ref = "bouncycastle" }
 
 [plugins]
 quarkus = { id = "io.quarkus", version.ref = "quarkus" }

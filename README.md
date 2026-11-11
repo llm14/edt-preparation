@@ -393,6 +393,44 @@ that KMS `Sign` with `MessageType=DIGEST` gives a wrong signature there (moto ha
 the signer sends the **digest**, so the emulator was replaced rather than the design. Floci signs a digest as real
 AWS KMS does (checked with the same probe). It also covers S3, SQS and EventBridge, which Batch Ingest needs later.
 
+### Step 11c-2: our own JCA provider, `EDT-KMS`
+
+`duis-signer/.../adapter/kms/` is a small JCA provider. With it, the private keys stay in KMS and
+`JcaXmlSigner` (step 11b) works **unchanged**: only the KeyStore type and the provider name differ.
+
+| File | What it is |
+|---|---|
+| `KmsProvider` | `Provider` named `EDT-KMS`. Registers `KeyStore.KMS` and `Signature.SHA256withECDSA`. |
+| `KmsKeyStoreSpi` | `load()` reads the certificate store. `getKey("other-user")` returns a handle to `alias/edt-other-user`. |
+| `KmsPrivateKey` | The handle: a KMS key id, no key material (`getEncoded()` is `null`). |
+| `KmsSignatureSpi` | Hashes the data with SHA-256 locally, sends the **digest** to KMS `Sign` (`MessageType=DIGEST`), returns the DER signature. |
+
+```java
+Security.addProvider(new KmsProvider(kmsClient, "alias/edt-"));       // once, at startup
+
+KeyStore keys = KeyStore.getInstance("KMS", "EDT-KMS");               // instead of "PKCS12"
+keys.load(certificateStoreStream, password);
+new JcaXmlSigner(keys, null, aliases, "EDT-KMS");                     // instead of "SunEC"
+```
+
+The signing path:
+```
+JcaXmlSigner -> JDK XML DSig -> Signature.getInstance("SHA256withECDSA", "EDT-KMS")
+             -> KmsSignatureSpi: SHA-256 of SignedInfo -> KMS Sign(DIGEST) -> DER signature
+             -> JDK XML DSig converts DER to r||s -> <SignatureValue>
+```
+
+Test: `KmsProviderTest` starts Floci with **Testcontainers** (needs Docker), creates a KMS key and a certificate
+for it, then signs XML through `JcaXmlSigner` and verifies it with the certificate.
+
+Key ideas:
+- **SPI**: a provider supplies engines by extending `KeyStoreSpi` and `SignatureSpi`. Callers only see `KeyStore` and `Signature`.
+- **`Provider.Service`**: each engine is a service whose `newInstance()` creates the SPI, so the provider can hand
+  its `KmsClient` to them (no static fields).
+- **Opaque key**: a `PrivateKey` can be just a reference. The AWS SDK appears only in `KmsSignatureSpi`.
+- **Verify locally**: verifying needs only the public key, so `KmsSignatureSpi` passes it to the JDK (`SunEC`).
+- The AWS SDK uses the plain JDK HTTP client (`url-connection-client`); Netty and Apache clients are excluded.
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
