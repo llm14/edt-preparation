@@ -9,6 +9,7 @@ archunit = "1.5.1"
 [libraries]
 quarkus-bom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
 temporal-sdk = { module = "io.temporal:temporal-sdk", version.ref = "temporal" }
+temporal-testing = { module = "io.temporal:temporal-testing", version.ref = "temporal" }
 
 # Quarkus extensions: no version here, the Quarkus BOM decides it.
 quarkus-arc = { module = "io.quarkus:quarkus-arc" }

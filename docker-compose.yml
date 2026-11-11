@@ -28,6 +28,8 @@ services:
     image: edt/orchestrator:local
     restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8082:8082"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8082 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]

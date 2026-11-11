@@ -234,9 +234,47 @@ Key ideas:
 
 Also fixed in all four applications: the text log format now prints exceptions (`%e`).
 
+### Step 10: first round trip, Orchestrator to DUIS Signer
+
+The Orchestrator is now a Temporal worker on task queue `orchestrator`. It runs a throwaway workflow,
+`SignProbe`, that calls the Sign activity on the signer's queue `duis-signing`.
+
+| File (in `orchestrator`) | What it does |
+|---|---|
+| `adapter/SignActivity.java` | The Orchestrator's own **copy** of the signer's activity interface. Same name `"Sign"`. |
+| `adapter/SignProbeWorkflow.java`, `SignProbeWorkflowImpl.java` | The workflow: one call to `Sign`, on the signing queue, max 30 s per attempt, max 3 attempts. |
+| `infrastructure/TemporalWorker.java` | Registers the workflow with a factory, so the signing queue name comes from configuration. |
+| `src/test/.../SignProbeWorkflowTest.java` | Runs the workflow on an in-memory Temporal server with a fake signer. No Docker. |
+
+Try it (with `dcc-tools` running):
+```
+docker compose up --build -d orchestrator duis-signer
+docker run --rm --network edt temporalio/admin-tools:1.32.2 \
+  temporal --address temporal:7233 --namespace edt \
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input '"<request/>"'
+```
+It fails on purpose: the signer answers `Signing is not implemented yet` (type `NotImplemented`, non-retryable).
+Open it in the Temporal UI (http://localhost:8088) to see the history:
+
+```
+WorkflowExecutionStarted       the CLI starts the workflow
+WorkflowTask...                the Orchestrator runs the workflow code: it asks for "Sign"
+ActivityTaskScheduled          "Sign" goes to queue duis-signing
+ActivityTaskStarted/Failed     the signer runs it and refuses
+WorkflowTask...                the Orchestrator runs the workflow code again: the error is not caught
+WorkflowExecutionFailed
+```
+
+Key ideas:
+- **Workflow vs activity**: the workflow decides (deterministic code, replayed from history); the activity does the work.
+- **Determinism**: no I/O, clock, random or threads in workflow code. Use `Workflow.getLogger` for logs.
+- **Workflow factory**: Temporal creates workflow objects, not CDI, so configuration is passed in through a factory.
+- **Retries**: set per activity call. A non-retryable failure is never retried (the test checks it).
+- **Event history**: everything that happened, stored by the Temporal Server. It is how Temporal recovers after a crash.
+
 ## Service interactions
 
-Planned, from the architecture model. Not implemented yet.
+From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
 
 The applications never call each other directly. They talk through the Temporal Server:
 
@@ -256,7 +294,7 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | From | To | How |
 |---|---|---|
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
-| `orchestrator` | `duis-signer` | Temporal activity on the signing task queue |
+| `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working, placeholder)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) |
 | `orchestrator` | Kafka | publishes step, device and Batch results |
