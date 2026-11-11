@@ -25,16 +25,17 @@ public class SignProbeWorkflowImpl implements SignProbeWorkflow {
                         .setTaskQueue(signingTaskQueue)
                         // Maximum time for one attempt, once a signer worker has picked it up.
                         .setStartToCloseTimeout(Duration.ofSeconds(30))
-                        // Retry transient errors a few times; non-retryable failures are never retried.
+                        // Retry technical errors a few times. A refusal is a result, so it is never retried.
                         .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(3).build())
                         .build());
     }
 
     @Override
-    public String run(String unsignedServiceRequest) {
+    public SignOutcome run(String unsignedServiceRequest) {
         LOG.info("Asking the DUIS Signer to sign");
-        String signed = signer.sign(unsignedServiceRequest);
-        LOG.info("Signed");
-        return signed;
+        SignOutcome outcome = signer.sign(unsignedServiceRequest);
+        LOG.info("Sign outcome: {} {}", outcome.status(),
+                outcome.refusalReason() == null ? "" : outcome.refusalReason());
+        return outcome;
     }
 }

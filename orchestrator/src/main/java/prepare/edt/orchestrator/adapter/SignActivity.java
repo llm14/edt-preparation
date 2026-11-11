@@ -8,13 +8,13 @@ import io.temporal.activity.ActivityMethod;
  *
  * The Orchestrator never implements it: the DUIS Signer does, in another container.
  * This copy only lets workflows call it. Temporal matches the two by the name "Sign"
- * and the task queue, so both must stay identical to the signer's side.
+ * and the task queue, and the result by its JSON fields (SignOutcome), so both sides must stay identical.
  *
- * Placeholder signature: a String in and out, as in the signer.
+ * A refusal comes back as a normal result (status REFUSED), not as an error.
  */
 @ActivityInterface
 public interface SignActivity {
 
     @ActivityMethod(name = "Sign")
-    String sign(String unsignedServiceRequest);
+    SignOutcome sign(String unsignedServiceRequest);
 }

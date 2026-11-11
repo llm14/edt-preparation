@@ -10,6 +10,7 @@ import jakarta.enterprise.event.Observes;
 import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
 import prepare.edt.duissigner.adapter.SignActivityImpl;
+import prepare.edt.duissigner.usecase.SignServiceRequest;
 
 /**
  * Starts the Temporal worker when the application starts, and stops it at shutdown.
@@ -24,17 +25,19 @@ public class TemporalWorker {
 
     private final WorkflowClient client;
     private final TemporalConfig config;
+    private final SignServiceRequest signServiceRequest;
     private WorkerFactory factory;
 
-    TemporalWorker(WorkflowClient client, TemporalConfig config) {
+    TemporalWorker(WorkflowClient client, TemporalConfig config, SignServiceRequest signServiceRequest) {
         this.client = client;
         this.config = config;
+        this.signServiceRequest = signServiceRequest;
     }
 
     void onStart(@Observes StartupEvent event) {
         factory = WorkerFactory.newInstance(client);
         Worker worker = factory.newWorker(config.taskQueue());
-        worker.registerActivitiesImplementations(new SignActivityImpl());
+        worker.registerActivitiesImplementations(new SignActivityImpl(signServiceRequest));
         factory.start();
 
         try (var fields = LogFields.of(

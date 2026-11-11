@@ -431,9 +431,56 @@ Key ideas:
 - **Verify locally**: verifying needs only the public key, so `KmsSignatureSpi` passes it to the JDK (`SunEC`).
 - The AWS SDK uses the plain JDK HTTP client (`url-connection-client`); Netty and Apache clients are excluded.
 
+### Step 11d: everything wired, KMS by default
+
+The signer now really signs. `SignProbe` returns a Service Request signed in KMS (Floci).
+
+| File (in `duis-signer`) | What it does |
+|---|---|
+| `infrastructure/SigningConfig`, `KmsConfig`, `PolicyConfig` | Configuration: KeyStore type and providers, KMS endpoint, allowlists (**PLACEHOLDER**). |
+| `infrastructure/SigningWiring` | CDI producer: installs `EDT-KMS` if configured, loads the KeyStore, builds adapters, policy and use case. |
+| `adapter/SignActivityImpl`, `SignOutcome` | The Sign activity calls the use case and returns `SignOutcome` (SIGNED or REFUSED). |
+| `adapter/EcsAuditLog` | One audit event per decision, logger `edt.audit`. |
+
+Configuration (`duis-signer/src/main/resources/application.properties`):
+```
+edt.signing.keystore-type=KMS            # PKCS12 for software keys
+edt.signing.keystore-provider=EDT-KMS    # SUN for software keys
+edt.signing.signature-provider=EDT-KMS   # SunEC for software keys
+edt.signing.certificate-store=...        # Docker: /certs/certificate-store.p12, mounted read-only
+edt.policy.roles.other-user.srvs."4.1.1"=ESME,GSME    # PLACEHOLDER allowlist
+```
+
+Try it (with `dcc-tools` running, from the repository root, Git Bash):
+```
+docker compose up --build -d orchestrator duis-signer
+# input: a JSON string with an unsigned placeholder Service Request (samples/sign-probe/)
+MSYS_NO_PATHCONV=1 docker run --rm --network edt -v "$(pwd -W)/samples/sign-probe:/in:ro" temporalio/admin-tools:1.32.2 \
+  temporal --address temporal:7233 --namespace edt \
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input-file /in/signed.json
+```
+Result: `{"status":"SIGNED","userRole":"OTHER_USER","signedServiceRequest":"<ServiceRequest ...><Signature ...>"}`.
+With `refused.json` (SRV `9.9.9`): `{"status":"REFUSED","refusalReason":"SRV 9.9.9 is not on the allowlist of any User Role"}`.
+
+Audit event (ECS JSON, shortened):
+```
+{"log.logger":"edt.audit","log.level":"INFO","message":"Service Request signed",
+ "mdc":{"event.action":"sign-service-request","event.outcome":"success","edt.request_id":"REQ-0001",
+        "edt.srv":"4.1.1","edt.user_role":"OTHER_USER","WorkflowId":"sign-probe-ok","ActivityType":"Sign",...}}
+```
+
+Key ideas:
+- **A refusal is a result, not an error** (the model: "returns the signed Service Request or the reason it was refused").
+  Only technical errors (KMS down) throw, and Temporal retries them (max 3 attempts).
+- **Contract by JSON field names**: `SignOutcome` exists in both applications with the same fields.
+  Strings instead of enums, so a new value does not break the other side.
+- **Temporal adds context to logs**: activity logs carry `WorkflowId`, `ActivityType`, `Attempt` automatically.
+- **Quoted map keys**: an SRV like `4.1.1` has dots, so it is written `srvs."4.1.1"` in `application.properties`.
+- Restarting `dcc-tools` creates new KMS keys and certificates: restart `duis-signer` afterwards.
+
 ## Service interactions
 
-From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
+From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS).
 
 The applications never call each other directly. They talk through the Temporal Server:
 
@@ -453,7 +500,7 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | From | To | How |
 |---|---|---|
 | `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
-| `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working, placeholder)** |
+| `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) |
 | `orchestrator` | Kafka | publishes step, device and Batch results |

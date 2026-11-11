@@ -10,11 +10,12 @@ import io.temporal.activity.ActivityMethod;
  * The name "Sign" is set explicitly: Temporal matches activities by name, and the Orchestrator
  * keeps its own copy of this interface, so the name must never change by accident (for example a rename).
  *
- * Placeholder signature: a String in and out. The real request and result types come with the signing logic.
+ * A refusal is a normal result (SignOutcome with status REFUSED), not an error.
+ * Only technical errors (for example KMS unreachable) throw, so that Temporal retries them.
  */
 @ActivityInterface
 public interface SignActivity {
 
     @ActivityMethod(name = "Sign")
-    String sign(String unsignedServiceRequest);
+    SignOutcome sign(String unsignedServiceRequest);
 }

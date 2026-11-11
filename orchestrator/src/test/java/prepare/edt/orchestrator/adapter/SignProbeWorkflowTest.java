@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.temporal.client.WorkflowFailedException;
 import io.temporal.client.WorkflowOptions;
-import io.temporal.failure.ApplicationFailure;
 import io.temporal.testing.TestWorkflowEnvironment;
 import io.temporal.worker.Worker;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,7 +18,7 @@ import org.junit.jupiter.api.Timeout;
  * A fake Sign activity, registered only on the signing task queue, stands in for the DUIS Signer:
  * if the workflow scheduled the activity on the wrong queue, nothing would ever run it.
  */
-@Timeout(10)
+@Timeout(20)
 class SignProbeWorkflowTest {
 
     private static final String ORCHESTRATOR_QUEUE = "orchestrator";
@@ -42,26 +41,43 @@ class SignProbeWorkflowTest {
     }
 
     @Test
-    void returns_what_the_signer_returns() {
-        signerWorker.registerActivitiesImplementations((SignActivity) request -> "signed:" + request);
+    void returns_the_signed_outcome() {
+        signerWorker.registerActivitiesImplementations((SignActivity) request ->
+                new SignOutcome(SignOutcome.SIGNED, "REQ-1", "OTHER_USER", request + "<Signature/>", null));
         env.start();
 
-        String result = newWorkflow().run("<request/>");
+        SignOutcome outcome = newWorkflow().run("<request/>");
 
-        assertEquals("signed:<request/>", result);
+        assertEquals(new SignOutcome("SIGNED", "REQ-1", "OTHER_USER", "<request/><Signature/>", null), outcome);
     }
 
     @Test
-    void fails_without_retry_when_the_signer_refuses() {
+    void a_refusal_is_a_normal_result_and_is_not_retried() {
         AtomicInteger calls = new AtomicInteger();
         signerWorker.registerActivitiesImplementations((SignActivity) request -> {
             calls.incrementAndGet();
-            throw ApplicationFailure.newNonRetryableFailure("refused", "NotImplemented");
+            return new SignOutcome(SignOutcome.REFUSED, "REQ-1", null, null, "SRV not allowed");
+        });
+        env.start();
+
+        SignOutcome outcome = newWorkflow().run("<request/>");
+
+        assertEquals("REFUSED", outcome.status());
+        assertEquals("SRV not allowed", outcome.refusalReason());
+        assertEquals(1, calls.get());
+    }
+
+    @Test
+    void a_technical_error_is_retried_three_times_then_fails() {
+        AtomicInteger calls = new AtomicInteger();
+        signerWorker.registerActivitiesImplementations((SignActivity) request -> {
+            calls.incrementAndGet();
+            throw new IllegalStateException("KMS unreachable");
         });
         env.start();
 
         assertThrows(WorkflowFailedException.class, () -> newWorkflow().run("<request/>"));
-        assertEquals(1, calls.get(), "a non-retryable failure must not be retried");
+        assertEquals(3, calls.get(), "maximum 3 attempts");
     }
 
     private SignProbeWorkflow newWorkflow() {

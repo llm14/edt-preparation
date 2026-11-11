@@ -1,17 +1,26 @@
 package prepare.edt.duissigner.adapter;
 
-import io.temporal.failure.ApplicationFailure;
+import prepare.edt.duissigner.usecase.SignResult;
+import prepare.edt.duissigner.usecase.SignServiceRequest;
 
 /**
- * Placeholder implementation: refuses every request.
- *
- * It throws a non-retryable failure, so Temporal does not retry it: the caller gets the error at once.
- * Later this will call the signing use case (policy check, then sign through KMS, then audit).
+ * Adapter between Temporal and the use case: calls SignServiceRequest and turns its result into a SignOutcome.
  */
-public class SignActivityImpl implements SignActivity {
+public final class SignActivityImpl implements SignActivity {
+
+    private final SignServiceRequest useCase;
+
+    public SignActivityImpl(SignServiceRequest useCase) {
+        this.useCase = useCase;
+    }
 
     @Override
-    public String sign(String unsignedServiceRequest) {
-        throw ApplicationFailure.newNonRetryableFailure("Signing is not implemented yet", "NotImplemented");
+    public SignOutcome sign(String unsignedServiceRequest) {
+        return switch (useCase.sign(unsignedServiceRequest)) {
+            case SignResult.Signed signed -> new SignOutcome(SignOutcome.SIGNED, signed.requestId(),
+                    signed.role().name(), signed.signedXml(), null);
+            case SignResult.Refused refused -> new SignOutcome(SignOutcome.REFUSED, refused.requestId(),
+                    null, null, refused.reason());
+        };
     }
 }
