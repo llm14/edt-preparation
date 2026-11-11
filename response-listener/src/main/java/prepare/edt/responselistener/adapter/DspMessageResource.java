@@ -18,7 +18,7 @@ import prepare.edt.responselistener.usecase.WorkflowSignaller.SignallerUnavailab
  * The HTTP status tells the gateway whether to try again:
  *   200  delivered to the workflow, or no workflow waits for it (orphan: retrying would not help)
  *   400  unreadable message (retrying would not help either)
- *   503  Temporal unreachable: the gateway should retry later
+ *   500  Temporal unreachable: the gateway delivers it again later (architecture model, Response Endpoint)
  */
 @Path("/duis/responses")
 public class DspMessageResource {
@@ -60,7 +60,7 @@ public class DspMessageResource {
             try (var fields = LogFields.of("event.action", "dsp-message-not-delivered", "error.message", e.getMessage())) {
                 LOG.error("Could not signal the workflow; the gateway should retry");
             }
-            return Response.status(Response.Status.SERVICE_UNAVAILABLE).entity("try again later").build();
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("try again later").build();
         }
     }
 }

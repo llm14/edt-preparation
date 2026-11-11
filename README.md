@@ -544,7 +544,7 @@ The **last group of the target device ID** chooses what the simulator does (PLAC
 | `-A4` | rejected | nothing |
 | `-A5` | accepted | DCC Alert N53, then Response |
 
-Delivery to the Response Listener is retried 5 times, 3 s apart (the gateway retries; the listener answers 503
+Delivery to the Response Listener is retried 5 times, 3 s apart (the gateway retries; the listener answers 500
 when Temporal is down), then dropped.
 
 | File | What it does |
@@ -595,7 +595,7 @@ The HTTP status tells the gateway whether to retry:
 | delivered to the waiting workflow | 200 `signalled` |
 | no running workflow (ended, for example timed out): logged as `dsp-message-orphan` | 200 `orphan` (a retry would not help) |
 | not a readable Response or DCC Alert | 400 |
-| Temporal unreachable | 503 (the gateway retries) |
+| Temporal unreachable | 500 (the gateway retries; the model says 500) |
 
 | File | What it does |
 |---|---|
@@ -658,6 +658,26 @@ What I learned while testing:
   Temporal documents a migration setting (`matching.enableMigration`) for switching a live queue.
 - The test `the_send_is_keyed_by_batch_for_fairness` checks only that the key is set. The in-memory test server does
   not enforce rate limits or fairness, so the behaviour is shown with the real server.
+
+### Step 12e: two fixes after checking the model (views 010.030 and 100.010)
+
+1. **Response Listener answers 500 when Temporal is down** (it answered 503). The model's Response Endpoint says
+   500, so the message is delivered again. `response-listener/.../adapter/DspMessageResource.java`.
+2. **Temporal SDK metrics at `/q/metrics`** (the model: "Prometheus metrics (JVM and Temporal SDK)").
+   In each app's `infrastructure/TemporalConnection.java`:
+
+```
+Temporal SDK --metrics (Tally)--> MicrometerClientStatsReporter --> Quarkus MeterRegistry --> /q/metrics
+```
+   A `Scope` is given to `WorkflowServiceStubsOptions.setMetricsScope(...)`; workers built on that client report into it.
+   No new dependency: Tally comes with the Temporal SDK. Useful series, for example:
+   - `temporal_activity_schedule_to_start_latency_seconds{activity_type="SendServiceRequest"}`: how long sends wait
+     in the rate-limited queue (a growing value means the send rate is the bottleneck);
+   - `temporal_activity_execution_latency_seconds{activity_type="Sign"}`: signing time, KMS included;
+   - `temporal_request_total{operation="SignalWorkflowExecution"}`: signals sent by the Response Listener.
+
+Still open from that check: the DSP signature check (steps 13 and 18, and the certificate store in the Orchestrator
+and the Response Listener), and the Response Decoder with its Facts (steps 20 to 22).
 
 ## Service interactions
 

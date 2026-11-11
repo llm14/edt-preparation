@@ -30,12 +30,12 @@ class DspMessageResourceTest {
     }
 
     @Test
-    void temporal_unreachable_is_503_so_the_gateway_retries() {
+    void temporal_unreachable_is_500_so_the_gateway_retries() {
         WorkflowSignaller down = (id, m) -> {
             throw new WorkflowSignaller.SignallerUnavailableException("UNAVAILABLE", null);
         };
 
-        assertEquals(503, resource(down).receive(RESPONSE).getStatus());
+        assertEquals(500, resource(down).receive(RESPONSE).getStatus());
     }
 
     static DspMessageResource resource(WorkflowSignaller signaller) {
