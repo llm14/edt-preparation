@@ -25,29 +25,23 @@ class ArchitectureTest {
         "io.quarkus..", "io.temporal..", "software.amazon..", "jakarta.."
     };
 
-    // allowEmptyShould(true): entity and usecase have no classes yet.
-    // Remove it once they do, so a wrong package name can never make a rule pass silently.
-
     @ArchTest
     static final ArchRule entities_depend_on_nothing_outer = noClasses()
             .that().resideInAPackage("..entity..")
             .should().dependOnClassesThat()
-            .resideInAnyPackage("..usecase..", "..adapter..", "..infrastructure..")
-            .allowEmptyShould(true);
+            .resideInAnyPackage("..usecase..", "..adapter..", "..infrastructure..");
 
     @ArchTest
     static final ArchRule use_cases_do_not_depend_on_adapters_or_infrastructure = noClasses()
             .that().resideInAPackage("..usecase..")
             .should().dependOnClassesThat()
-            .resideInAnyPackage("..adapter..", "..infrastructure..")
-            .allowEmptyShould(true);
+            .resideInAnyPackage("..adapter..", "..infrastructure..");
 
     @ArchTest
     static final ArchRule entities_and_use_cases_use_no_framework = noClasses()
             .that().resideInAnyPackage("..entity..", "..usecase..")
             .should().dependOnClassesThat()
-            .resideInAnyPackage(FRAMEWORKS)
-            .allowEmptyShould(true);
+            .resideInAnyPackage(FRAMEWORKS);
 
     /** Guard: ArchUnit can read our Java 25 classes, so the rules above check real code. */
     @Test

@@ -17,7 +17,26 @@ dependencies {
     // Logs as JSON, one object per line, in ECS format.
     implementation libs.quarkus.logging.json
 
-    // Tests: JUnit 5 and ArchUnit (architecture rules).
+    // Temporal Java SDK: a client only (starts Batch workflows), no worker.
+    implementation libs.temporal.sdk
+
+    // AWS SDK: SQS (Manifest events), S3 (the Manifest and its signature tag), KMS (Verify, behind our EDT-KMS
+    // JCA provider). Plain JDK HTTP client (no Netty, no Apache), as in the DUIS Signer.
+    implementation platform(libs.awssdk.bom)
+    [libs.awssdk.sqs, libs.awssdk.s3, libs.awssdk.kms].each {
+        implementation(it) {
+            exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+            exclude group: 'software.amazon.awssdk', module: 'apache-client'
+            exclude group: 'software.amazon.awssdk', module: 'apache5-client'
+        }
+    }
+    implementation libs.awssdk.url.connection.client
+
+    // Reads the JSON of the "Object Created" message.
+    implementation libs.jackson.databind
+
+    // Tests: JUnit 5 and ArchUnit (architecture rules), Temporal in memory.
+    testImplementation libs.temporal.testing
     testImplementation libs.junit.jupiter
     testImplementation libs.archunit
     testRuntimeOnly libs.junit.platform.launcher

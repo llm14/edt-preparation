@@ -19,6 +19,9 @@ services:
     image: edt/batch-ingest:local
     restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
     ports: ["8081:8081"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233
+      EDT_AWS_ENDPOINT: http://floci:4566   # SQS, S3 and KMS (Floci)
     healthcheck:
       <<: *healthcheck
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8081 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]

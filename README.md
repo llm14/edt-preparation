@@ -780,9 +780,53 @@ Note: running `kms-setup` again makes a new DSP key. Restart `dsp-simulator`, `o
 
 To confirm with DCC: the Manifest columns, and the signature's tag name and format. **[CONFIRM]**
 
+### Step 16: Batch Ingest (model 100.010)
+
+```
+SQS long poll (20 s) --"Object Created"--> Manifest Event Consumer
+   |  parse: bucket, key, version-id
+   v
+IngestManifest (use case)
+   1. Manifest Signature Verifier: S3 GetObjectTagging(version) -> dcc-signature
+                                   S3 GetObject(version), streamed into Signature("SHA256withECDSA", "EDT-KMS")
+                                   verify -> KMS Verify(digest, DIGEST, alias/dcc-manifest)
+   2. invalid -> Rejected      valid -> Batch Starter: start workflow "Batch" on queue "orchestrator",
+                                        ID batch-<bucket>/<key>/<version>, REJECT_DUPLICATE
+   v
+Started / AlreadyStarted / Rejected -> delete the message
+S3, KMS or Temporal unreachable, unreadable message -> leave it: SQS gives it again (DCC's dead-letter queue in production)
+```
+
+| File (under `batch-ingest/src/main/java/prepare/edt/batchingest/`) | What |
+|---|---|
+| `entity/ManifestRef.java` | Bucket, key, version; `batchWorkflowId()`. |
+| `usecase/IngestManifest.java` | Verify first, then start; outcome Started, AlreadyStarted or Rejected. Ports `ManifestVerifier`, `BatchStarter`. |
+| `adapter/SqsManifestEventConsumer.java` | Long poll, logs `manifest-received` and the outcome, deletes only on an outcome. A rejection is a security event on `edt.security` (`manifest-signature-invalid`). |
+| `adapter/S3ManifestVerifier.java` | Tag + streamed object into a JCA `Signature`. Missing tag, not base64, malformed or wrong signature: invalid. |
+| `adapter/kms/` | Batch Ingest's own `EDT-KMS` provider: `SHA256withECDSA` whose verify calls **KMS Verify**. `KMSInvalidSignatureException` means `false`. Any other KMS error is a `ProviderException`: not a verdict, the message comes back. It refuses to sign. |
+| `adapter/TemporalBatchStarter.java` | Untyped stub, type `Batch`, input `BatchInput(bucket, key, versionId)`. `WorkflowExecutionAlreadyStarted` means already started. |
+| `infrastructure/ManifestEventPolling.java` | One polling thread for the life of the app; after an error it waits 5 s. |
+
+Exactly once per upload:
+- The workflow ID comes from the object version, so the same message twice starts one Batch.
+- REJECT_DUPLICATE: also after that Batch has ended.
+- A new upload of the same file is a new version, so a new Batch (the model's "resubmitting a file starts a new Batch").
+
+Verified (dcc-tools running, `docker compose up -d --build batch-ingest`):
+
+| Message | Result |
+|---|---|
+| valid Manifest | `Batch started`, workflow `batch-edt-manifests/sample.csv/<version>` Running in Temporal |
+| `--bad-signature` | `Manifest rejected: its DCC signature is not valid` on `edt.security`, no workflow |
+| same message again | `Batch already started: duplicate message`, deleted |
+
+Not yet: the Orchestrator has no `Batch` workflow, so its worker fails that workflow task ("workflow type not
+registered") and Temporal retries it. The next step adds it. Until then, terminate test Batches:
+`temporal workflow terminate --workflow-id batch-...`.
+
 ## Service interactions
 
-From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),
+From the architecture model. Implemented so far: `batch-ingest` (SQS, S3, KMS Verify, starts the Batch), `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),
 and the DSP back to `response-listener`, which signals the workflow.
 
 The applications never call each other directly. They talk through the Temporal Server:
@@ -802,7 +846,7 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 
 | From | To | How |
 |---|---|---|
-| `batch-ingest` | Temporal | starts the Batch workflow (ID from bucket, key, object version) |
+| `batch-ingest` | SQS, S3, KMS, Temporal | receives the Object Created message, checks the Manifest signature (KMS Verify), starts the Batch workflow (ID from bucket, key, object version) **(working: Floci; the Batch workflow itself is next)** |
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; 1/s, fair by Batch)** |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working, after checking the DSP signature)** |
