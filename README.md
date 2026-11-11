@@ -138,6 +138,32 @@ Each keeps its own copy on purpose: the applications share no code, like separat
 
 Build and test all: `./gradlew build`
 
+### Step 7: containers
+
+Each application has a `Dockerfile` and a `.dockerignore`. The root `docker-compose.yml` runs all four.
+
+```
+docker network create edt     # once
+./gradlew build               # compile first: the image only copies the result
+docker compose up --build -d
+docker compose ps             # all four should be "(healthy)"
+docker compose logs -f duis-signer
+docker compose down
+```
+
+| File | What it does |
+|---|---|
+| `<app>/Dockerfile` | Java 25 runtime (`eclipse-temurin:25-jre`) plus `build/quarkus-app`. Runs as user 1001, not root. |
+| `<app>/.dockerignore` | Sends only `build/quarkus-app/` to Docker. |
+| `docker-compose.yml` | The four services, ports 8081-8084, healthchecks, network `edt`. |
+
+Key ideas:
+- **Build outside, package inside**: Gradle compiles on your machine, Docker only copies the result.
+- **Layers**: `lib/` (dependencies) is copied first, so Docker reuses it when only our code changes.
+- **Profiles**: inside the container the app runs with the `prod` profile, so the logs are ECS JSON.
+- **Healthcheck**: the image has no `curl`; bash opens a TCP connection to `/q/health/ready` and looks for `"UP"`.
+- **Network `edt`**: created once by hand and declared `external`, so this file and `dcc-tools` can share it.
+
 ## Service interactions
 
 Planned, from the architecture model. Not implemented yet.

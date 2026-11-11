@@ -1,0 +1,52 @@
+# The four EDT applications.
+# The DCC side (Temporal, Kafka, LocalStack, simulators) runs from dcc-tools/docker-compose.yml.
+#
+#   docker network create edt        # once: the network both compose files share
+#   ./gradlew build                  # build the applications first
+#   docker compose up --build -d
+
+# Healthcheck: the image has no curl, so bash opens a TCP connection to the app itself,
+# sends a plain HTTP request to /q/health/ready and looks for "UP" in the answer.
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 10s
+
+services:
+  batch-ingest:
+    build: ./batch-ingest
+    image: edt/batch-ingest:local
+    ports: ["8081:8081"]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8081 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  orchestrator:
+    build: ./orchestrator
+    image: edt/orchestrator:local
+    ports: ["8082:8082"]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8082 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  duis-signer:
+    build: ./duis-signer
+    image: edt/duis-signer:local
+    ports: ["8083:8083"]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8083 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  response-listener:
+    build: ./response-listener
+    image: edt/response-listener:local
+    ports: ["8084:8084"]
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8084 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+networks:
+  default:
+    name: edt
+    external: true
