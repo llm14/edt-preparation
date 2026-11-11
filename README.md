@@ -305,6 +305,58 @@ Key ideas:
 - **To confirm with DCC**: the role is chosen from the SRV, then the originator must be that role's User ID.
 - `allowEmptyShould` is gone from the signer's architecture test: its inner layers now have classes.
 
+### Step 11b: XML reading and JCA signing (software keys)
+
+Two adapters for the ports of step 11a, in `duis-signer/.../adapter`:
+
+| File | What it does |
+|---|---|
+| `XmlServiceRequestReader` | Parses safely (no DTD, so no XXE), validates against `schema/service-request-placeholder.xsd` (**PLACEHOLDER**, not DUIS), reads RequestId, SRV, Originator, DeviceType. |
+| `JcaXmlSigner` | Adds an enveloped XML signature: ECDSA P-256 + SHA-256, with the role's certificate in `KeyInfo`. Keys from a JCA `KeyStore`, signature from a JCA provider chosen by name. |
+| `SecureXml` | Safe parse and exact write of XML (shared by both). |
+
+Signed result (shortened):
+```xml
+<ServiceRequest xmlns="urn:edt:placeholder:duis">
+  <Header>...</Header><Body>...</Body>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/>
+      <Reference URI="">  <!-- the whole document, minus this Signature (enveloped) -->
+        <DigestValue>...</DigestValue>
+      </Reference>
+    </SignedInfo>
+    <SignatureValue>...</SignatureValue>  <!-- 64 bytes: r||s -->
+    <KeyInfo><X509Data><X509Certificate>...</X509Certificate></X509Data></KeyInfo>
+  </Signature>
+</ServiceRequest>
+```
+
+Tests (no Docker): keys made with `keytool` (EC `secp256r1`) into a PKCS#12 file; sign, then verify with the
+role's certificate; verify fails with the other role's certificate and after changing one value;
+a spy provider proves the configured provider does the signing.
+
+#### JCA in short
+
+- **Engine classes** (`Signature`, `KeyStore`, `KeyPairGenerator`, ...) are the API. You never create them with `new`:
+  `Signature.getInstance("SHA256withECDSA", "SunEC")`.
+- **Providers** supply the implementations. A provider is a list of `engine.algorithm = class` entries
+  (see `SpyProvider` in the tests). Each class extends the engine's **SPI** (`SignatureSpi`, `KeyStoreSpi`, ...).
+- `getInstance(alg)` takes the first installed provider that has it. `getInstance(alg, provider)` forces one.
+  We always name the provider, from configuration.
+- **Opaque keys**: a `PrivateKey` may be just a handle (KMS, HSM). The code does not change: only the provider does.
+
+| Setup | KeyStore type | Signature provider | Where the private key is |
+|---|---|---|---|
+| Tests (now) | `PKCS12` | `SunEC` (JDK) | in the `.p12` file |
+| Local with moto (11c) | `KMS` (our provider) | our KMS provider | inside KMS (moto) |
+| Maybe later | vendor type | CloudHSM provider | inside the HSM |
+
+How the provider reaches the XML signature: the JDK's XML DSig reads the sign-context property
+`org.jcp.xml.dsig.internal.dom.SignatureProvider` and calls `Signature.getInstance(alg, provider)`.
+It also converts the ECDSA signature from DER (what JCA returns) to r||s (what XML DSig needs).
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, placeholder).
