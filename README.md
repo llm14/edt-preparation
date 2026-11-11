@@ -478,6 +478,51 @@ Key ideas:
 - **Quoted map keys**: an SRV like `4.1.1` has dots, so it is written `srvs."4.1.1"` in `application.properties`.
 - Restarting `dcc-tools` creates new KMS keys and certificates: restart `duis-signer` afterwards.
 
+### Step 12a: the Service Request workflow (tested in memory)
+
+The heart of the model, in `orchestrator/.../adapter/ServiceRequestWorkflowImpl.java`. Not yet run in Docker:
+the DUIS Sender has no implementation until the DSP simulator (12b).
+
+```
+ServiceRequestWorkflow (workflow ID = "service-request-" + Request ID)
+  1. BuildServiceRequest   orchestrator queue   builds the unsigned XML, with the Request ID
+  2. Sign                  duis-signing queue   DUIS Signer (refused -> stop, never sent)
+  3. SendServiceRequest    duis-send queue      posts once, 1 attempt (the gateway retries)
+  4. wait for signal "DspMessage" up to the response timeout (2 minutes locally)
+       RESPONSE          -> RESPONDED
+       DCC Alert N12/N13 -> FAILED_ALERT
+       other DCC Alert   -> keep waiting
+       nothing           -> TIMED_OUT
+```
+
+| File | What it is |
+|---|---|
+| `entity/RequestId` | Request ID = originator : target : counter, and the workflow ID rule. **PLACEHOLDER counter.** |
+| `entity/DccAlerts` | Which alerts fail a Service Request (N12, N13). |
+| `adapter/ServiceRequestWorkflow(Impl)` | The workflow and its signal `DspMessage`. |
+| `adapter/RequestBuilderActivity(Impl)` | Builds the PLACEHOLDER XML the signer validates. |
+| `adapter/DuisSenderActivity`, `SyncResponse` | The sender's contract (implementation in 12b). |
+| `adapter/ServiceRequestOutcome`, `DspMessage`, `ServiceRequestInput` | Data passed through Temporal as JSON. |
+
+Where the Request ID comes from: the EDT creates it **before** sending (the Flow passes it in, the builder writes it
+into the XML). The DSP echoes it back in the Response; the Response Listener reads it there and derives the workflow ID.
+
+Tests (`ServiceRequestWorkflowTest`, in-memory Temporal, time skipped): response; **response arriving before the send
+returns**; N12; another alert then a response; timeout; refused signature; rejection in the synchronous response;
+failed post not retried.
+
+Key ideas:
+- **Signals**: a message to a running workflow, by workflow ID. Temporal stores it until the code reads it,
+  so an early Response is never lost (the workflow exists before anything is sent).
+- **Durable wait**: `Workflow.await(timeout, condition)` becomes a timer in Temporal: it survives restarts.
+- **Deterministic time**: `Workflow.currentTimeMillis()` instead of the system clock.
+- **Time skipping**: the test server jumps over timers, so a 2-minute timeout takes milliseconds.
+
+To confirm with DCC / the lead:
+- How the Request ID counter is generated (placeholder for now) and its exact format.
+- Open point 2 (retries): built as the model says (send once, never resent). The call described resending.
+- What DCC Alerts other than N12/N13 should do (for now: keep waiting).
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `orchestrator` to `duis-signer` (Sign activity, signing in KMS).
