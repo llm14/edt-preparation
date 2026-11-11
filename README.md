@@ -63,7 +63,7 @@ Added `quarkus-smallrye-health` and `quarkus-micrometer-registry-prometheus` to 
 
 Key ideas:
 - No checks are registered yet, so health is always `UP`. A check for the Temporal connection comes later.
-- Ports: batch-ingest 8081, orchestrator 8082, duis-signer 8083, response-listener 8084 (8080 is left for the Temporal UI).
+- Ports: batch-ingest 8081, orchestrator 8082, duis-signer 8083, response-listener 8084 (the Temporal UI is on 8088).
 
 ### Step 4: structured logging (ECS JSON)
 
@@ -163,6 +163,36 @@ Key ideas:
 - **Profiles**: inside the container the app runs with the `prod` profile, so the logs are ECS JSON.
 - **Healthcheck**: the image has no `curl`; bash opens a TCP connection to `/q/health/ready` and looks for `"UP"`.
 - **Network `edt`**: created once by hand and declared `external`, so this file and `dcc-tools` can share it.
+
+### Step 8: Temporal in `dcc-tools`
+
+`dcc-tools/` holds what DCC provides in production. It has its own `docker-compose.yml`.
+First piece: Temporal (versions from Temporal's own compose examples: server 1.32.2, PostgreSQL 16).
+
+```
+cd dcc-tools
+docker compose up -d
+docker compose ps -a        # temporal-schema and temporal-namespace show "Exited (0)": that is success
+```
+Temporal UI: http://localhost:8088 (port 8080 was already taken on this machine).
+
+| Service | Role |
+|---|---|
+| `postgresql` | Temporal's database. Not used by our applications. |
+| `temporal-schema` | Runs once: creates the databases `temporal` (histories, timers, queues) and `temporal_visibility` (the workflow list the UI shows). |
+| `temporal` | The Temporal Server. gRPC on port 7233: workers and clients connect here. |
+| `temporal-namespace` | Runs once: creates the namespace `edt`. |
+| `temporal-ui` | Web UI: namespaces, workflows, their histories. |
+
+Files: `dcc-tools/temporal/scripts/` (the two one-shot scripts), `dcc-tools/temporal/dynamicconfig/` (server settings).
+
+Key ideas:
+- **Temporal Server stores state, it runs no code.** Our applications are the *workers*: they poll task queues
+  on the server, run workflow and activity code, and report the results back.
+- **Namespace**: an isolated space for workflows (own retention, own search attributes). The EDT uses `edt`.
+- **Start order**: `depends_on` with `service_healthy` and `service_completed_successfully` makes compose
+  wait for the database, then the schema, then the server.
+- Inside the `edt` network the server is `temporal:7233`; from your machine it is `localhost:7233`.
 
 ## Service interactions
 

@@ -1,0 +1,8 @@
+# Temporal dynamic configuration (settings the server can change without a restart).
+# Copied from Temporal's own docker-compose example for SQL databases.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true # Dev setup only.
+    constraints: {}
