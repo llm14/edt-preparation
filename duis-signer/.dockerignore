@@ -1,0 +1,3 @@
+# Send only the built application to Docker, nothing else.
+*
+!build/quarkus-app/

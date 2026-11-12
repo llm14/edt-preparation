@@ -1,0 +1,80 @@
+# The four EDT applications.
+# The DCC side (Temporal, Kafka, Floci, simulators) runs from dcc-tools/docker-compose.yml.
+#
+#   docker network create edt        # once: the network both compose files share
+#   ./gradlew build                  # build the applications first
+#   docker compose up --build -d
+
+# Healthcheck: the image has no curl, so bash opens a TCP connection to the app itself,
+# sends a plain HTTP request to /q/health/ready and looks for "UP" in the answer.
+x-healthcheck: &healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 10s
+
+services:
+  batch-ingest:
+    build: ./batch-ingest
+    image: edt/batch-ingest:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
+    ports: ["8081:8081"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233
+      EDT_AWS_ENDPOINT: http://floci:4566   # SQS, S3 and KMS (Floci)
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8081 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  orchestrator:
+    build: ./orchestrator
+    image: edt/orchestrator:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
+    ports: ["8082:8082"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233
+      EDT_SERVICE_REQUEST_GATEWAY_URL: http://dsp-simulator:8090/duis/service-requests
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12   # the trusted DSP certificate
+      EDT_AWS_ENDPOINT: http://floci:4566                        # S3: the Manifest rows
+      EDT_KAFKA_BOOTSTRAP_SERVERS: kafka:9092                    # the results
+    volumes:
+      - ./dcc-tools/certs:/certs:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8082 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  duis-signer:
+    build: ./duis-signer
+    image: edt/duis-signer:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
+    ports: ["8083:8083"]
+    environment:
+      # Overrides edt.temporal.target from application.properties (Quarkus maps env vars to properties).
+      EDT_TEMPORAL_TARGET: temporal:7233
+      # Keys in KMS (Floci, from dcc-tools); certificates from the store that dcc-tools/kms-setup writes.
+      EDT_KMS_ENDPOINT: http://floci:4566
+      EDT_SIGNING_CERTIFICATE_STORE: /certs/certificate-store.p12
+    volumes:
+      - ./dcc-tools/certs:/certs:ro   # the certificate store, mounted read-only (as in the model)
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8083 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+  response-listener:
+    build: ./response-listener
+    image: edt/response-listener:local
+    restart: unless-stopped   # fail fast: if the app exits (for example Temporal unreachable), Docker restarts it
+    ports: ["8084:8084"]
+    environment:
+      EDT_TEMPORAL_TARGET: temporal:7233   # it signals workflows through the Temporal Server
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12   # the trusted DSP certificate
+    volumes:
+      - ./dcc-tools/certs:/certs:ro
+    healthcheck:
+      <<: *healthcheck
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8084 && printf 'GET /q/health/ready HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q '\"UP\"' <&3"]
+
+networks:
+  default:
+    name: edt
+    external: true

@@ -1,0 +1,206 @@
+# The DCC side of the EDT, for local development. In production DCC provides and runs these.
+# Temporal (server, PostgreSQL, UI), Floci (AWS KMS, S3, SQS), Kafka and the DSP simulator.
+#
+#   docker network create edt     # once, shared with the root docker-compose.yml
+#   ./gradlew installDist              # from this folder: builds kms-setup and dsp-simulator
+#   docker compose up -d --build        # from this folder
+#   Temporal UI: http://localhost:8088
+#
+# Start order (enforced by depends_on):
+#   postgresql -> temporal-schema (runs once, exits) -> temporal -> temporal-namespace (runs once, exits)
+#                                                                -> temporal-ui
+
+services:
+  postgresql:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: creates Temporal's databases and tables, then exits.
+  temporal-schema:
+    image: temporalio/admin-tools:1.32.2
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    environment:
+      POSTGRES_SEEDS: postgresql
+      POSTGRES_USER: temporal
+      SQL_PASSWORD: temporal
+      DB_PORT: 5432
+    volumes:
+      - ./temporal/scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/setup-schema.sh"]
+
+  # The Temporal Server: stores workflow state and hands out tasks to workers.
+  temporal:
+    image: temporalio/server:1.32.2
+    depends_on:
+      temporal-schema:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: postgresql
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    ports:
+      - "7233:7233"   # gRPC frontend: workers and clients connect here
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
+      interval: 5s
+      timeout: 3s
+      start_period: 30s
+      retries: 30
+
+  # One-shot: creates the "edt" namespace, then exits.
+  temporal-namespace:
+    image: temporalio/admin-tools:1.32.2
+    depends_on:
+      temporal:
+        condition: service_healthy
+    volumes:
+      - ./temporal/scripts:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/create-namespace.sh"]
+
+  # Web UI to see namespaces, workflows and their histories.
+  temporal-ui:
+    image: temporalio/ui:2.58.1
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_DEFAULT_NAMESPACE: edt
+    ports:
+      - "8088:8080"   # host 8088 (8080 is taken on this machine)
+
+  # AWS emulator Floci (open source, MIT, no account). KMS: the User Role keys and DCC's Manifest key.
+  # S3 and SQS: the Manifest bucket and the Manifest events queue.
+  # Everything is in memory: a restart loses keys, Manifests and messages, and kms-setup creates them again.
+  # The image has its own healthcheck (/usr/local/bin/healthcheck.sh).
+  floci:
+    image: floci/floci:2.4.0
+    ports:
+      - "4566:4566"   # AWS API endpoint: http://localhost:4566 from your machine, http://floci:4566 in Docker
+
+  # One-shot: creates the KMS keys of the two User Roles and of DCC's Manifests, the DSP's signing key,
+  # the certificate store, the Manifest bucket and the Manifest events queue, then exits.
+  # Build first: ./gradlew :kms-setup:installDist (from dcc-tools/)
+  kms-setup:
+    build: ./kms-setup
+    image: edt/kms-setup:local
+    depends_on:
+      floci:
+        condition: service_healthy
+    environment:
+      EDT_KMS_ENDPOINT: http://floci:4566
+      AWS_REGION: eu-west-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      EDT_CERT_STORE: /certs/certificate-store.p12
+      EDT_CERT_STORE_PASSWORD: edt-test-only
+      EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
+      EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
+      EDT_MANIFEST_BUCKET: edt-manifests
+      EDT_MANIFEST_QUEUE: edt-manifest-events
+    volumes:
+      - ./certs:/certs         # certificates only: the EDT containers mount this
+      - ./dsp-keys:/dsp-keys   # the DSP's PRIVATE key: only the DSP simulator mounts this
+
+  # Plays the DSP HTTPS Gateway, the DSP and the devices. Behaviour by the last group of the target device ID.
+  # Build first: ./gradlew :dsp-simulator:installDist (from dcc-tools/)
+  dsp-simulator:
+    build: ./dsp-simulator
+    image: edt/dsp-simulator:local
+    depends_on:
+      kms-setup:
+        condition: service_completed_successfully   # it needs the DSP key that kms-setup writes
+    ports:
+      - "8090:8090"   # Service Requests: POST http://dsp-simulator:8090/duis/service-requests
+    environment:
+      EDT_RESPONSE_LISTENER_URL: http://response-listener:8084/duis/responses
+      EDT_RESPONSE_DELAY_SECONDS: "5"
+      EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
+      EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
+    volumes:
+      - ./dsp-keys:/dsp-keys:ro
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/8090 && printf 'GET /health HTTP/1.0\\r\\n\\r\\n' >&3 && grep -q UP <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Kafka: one broker in KRaft mode (Kafka keeps its own metadata; no ZooKeeper). Plain text, no authentication:
+  # in production DCC runs the cluster, with mutual TLS (to be confirmed with DCC). In memory: no volume.
+  #
+  # A listener is an address the broker listens on; "advertised" is the address it tells clients to use.
+  #   INTERNAL   kafka:9092       the EDT containers and tools on the edt network
+  #   EXTERNAL   localhost:29092  apps running on your machine (quarkus dev)
+  #   CONTROLLER :9093            KRaft: the broker talking to its own controller
+  kafka:
+    image: apache/kafka:4.1.0
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller        # one node plays both roles
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"      # topics only from kafka-topics below: their config is explicit
+      # Kafka's own internal topics: one copy each, as there is one broker.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # One-shot: creates the EDT topics (kafka/create-topics.sh), then exits.
+  kafka-topics:
+    image: apache/kafka:4.1.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/create-topics.sh"]
+
+  # Run on demand (not started by "up"): signs a Manifest with DCC's key, uploads it, puts the message on the queue.
+  #   docker compose run --rm manifest-upload /manifests/sample.csv [--bad-signature]
+  # Build first: ./gradlew :manifest-upload:installDist (from dcc-tools/)
+  # No depends_on on purpose: "run" would start kms-setup again, which makes a new DSP key.
+  manifest-upload:
+    build: ./manifest-upload
+    image: edt/manifest-upload:local
+    profiles: ["tools"]
+    environment:
+      EDT_AWS_ENDPOINT: http://floci:4566
+      AWS_REGION: eu-west-2
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      EDT_MANIFEST_BUCKET: edt-manifests
+      EDT_MANIFEST_QUEUE: edt-manifest-events
+      EDT_MANIFEST_KEY: alias/dcc-manifest
+    volumes:
+      - ../samples/manifests:/manifests:ro
+
+networks:
+  default:
+    name: edt
+    external: true

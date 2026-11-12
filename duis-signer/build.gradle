@@ -1,0 +1,39 @@
+plugins {
+    alias(libs.plugins.quarkus)
+}
+
+dependencies {
+    // The BOM fixes the version of every Quarkus extension.
+    implementation enforcedPlatform(libs.quarkus.bom)
+
+    // CDI (dependency injection) and the application lifecycle.
+    implementation libs.quarkus.arc
+
+    // Health endpoints (/q/health) and Prometheus metrics (/q/metrics).
+    // Both start an HTTP server.
+    implementation libs.quarkus.health
+    implementation libs.quarkus.metrics.prometheus
+
+    // Logs as JSON, one object per line, in ECS format.
+    implementation libs.quarkus.logging.json
+
+    // Temporal Java SDK: connects to the Temporal Server and runs as a worker.
+    implementation libs.temporal.sdk
+
+    // AWS SDK, KMS only: used by our EDT-KMS JCA provider. Plain JDK HTTP client (no Netty, no Apache).
+    implementation platform(libs.awssdk.bom)
+    implementation(libs.awssdk.kms) {
+        exclude group: 'software.amazon.awssdk', module: 'netty-nio-client'
+        exclude group: 'software.amazon.awssdk', module: 'apache-client'
+        exclude group: 'software.amazon.awssdk', module: 'apache5-client'
+    }
+    implementation libs.awssdk.url.connection.client
+
+    // Tests: JUnit 5 and ArchUnit (architecture rules).
+    testImplementation libs.junit.jupiter
+    testImplementation libs.archunit
+    testImplementation libs.testcontainers
+    testImplementation libs.testcontainers.junit.jupiter
+    testImplementation libs.bouncycastle.pkix
+    testRuntimeOnly libs.junit.platform.launcher
+}

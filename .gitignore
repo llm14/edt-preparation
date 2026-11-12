@@ -10,3 +10,9 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Generated test certificate store (dcc-tools/kms-setup writes it at every start)
+dcc-tools/certs/
+
+# The simulated DSP private key (dcc-tools/kms-setup writes it; only the DSP simulator mounts it)
+dcc-tools/dsp-keys/

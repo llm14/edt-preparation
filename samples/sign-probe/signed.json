@@ -1,0 +1,1 @@
+"<ServiceRequest xmlns=\"urn:edt:placeholder:duis\"><Header><RequestId>REQ-0001</RequestId><Originator>90-B3-D5-1F-30-01-00-01</Originator><SRV>4.1.1</SRV><DeviceType>ESME</DeviceType></Header><Body><ReadInstantaneousImportRegisters/></Body></ServiceRequest>"

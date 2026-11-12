@@ -1,0 +1,30 @@
+plugins {
+    alias(libs.plugins.quarkus)
+}
+
+dependencies {
+    // The BOM fixes the version of every Quarkus extension.
+    implementation enforcedPlatform(libs.quarkus.bom)
+
+    // CDI (dependency injection) and the application lifecycle.
+    implementation libs.quarkus.arc
+
+    // REST endpoints (Jakarta REST): POST /duis/responses, where the gateway delivers Responses and DCC Alerts.
+    implementation libs.quarkus.rest
+
+    // Health endpoints (/q/health) and Prometheus metrics (/q/metrics).
+    implementation libs.quarkus.health
+    implementation libs.quarkus.metrics.prometheus
+
+    // Logs as JSON, one object per line, in ECS format.
+    implementation libs.quarkus.logging.json
+
+    // Temporal Java SDK: only the client part is used (to signal workflows); this app runs no worker.
+    implementation libs.temporal.sdk
+
+    // Tests: JUnit, ArchUnit, and Temporal's in-memory test server.
+    testImplementation libs.junit.jupiter
+    testImplementation libs.archunit
+    testImplementation libs.temporal.testing
+    testRuntimeOnly libs.junit.platform.launcher
+}
