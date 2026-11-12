@@ -35,6 +35,7 @@ services:
       EDT_TEMPORAL_TARGET: temporal:7233
       EDT_SERVICE_REQUEST_GATEWAY_URL: http://dsp-simulator:8090/duis/service-requests
       EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12   # the trusted DSP certificate
+      EDT_AWS_ENDPOINT: http://floci:4566                        # S3: the Manifest rows
     volumes:
       - ./dcc-tools/certs:/certs:ro
     healthcheck:

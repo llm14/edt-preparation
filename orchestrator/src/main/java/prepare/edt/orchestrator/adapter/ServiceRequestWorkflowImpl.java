@@ -11,6 +11,7 @@ import java.util.ArrayDeque;
 import java.util.Queue;
 import org.slf4j.Logger;
 import prepare.edt.orchestrator.entity.DccAlerts;
+import prepare.edt.orchestrator.entity.FairnessKey;
 import prepare.edt.orchestrator.entity.Facts;
 
 /**
@@ -71,7 +72,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
                 .setStartToCloseTimeout(Duration.ofSeconds(60))
                 // Posts once: no retry of its own. The DSP HTTPS Gateway retries transient errors.
                 .setRetryOptions(RetryOptions.newBuilder().setMaximumAttempts(1).build())
-                .setPriority(Priority.newBuilder().setFairnessKey(batchId).build())
+                .setPriority(Priority.newBuilder().setFairnessKey(FairnessKey.of(batchId)).build())
                 .build());
     }
 

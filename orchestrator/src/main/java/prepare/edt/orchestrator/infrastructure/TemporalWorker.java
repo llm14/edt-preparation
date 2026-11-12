@@ -11,8 +11,13 @@ import jakarta.enterprise.event.Observes;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.jboss.logging.Logger;
+import prepare.edt.orchestrator.adapter.BatchWorkflow;
+import prepare.edt.orchestrator.adapter.BatchWorkflowImpl;
 import prepare.edt.orchestrator.adapter.DspSignatureVerifier;
 import prepare.edt.orchestrator.adapter.DuisSenderActivityImpl;
+import prepare.edt.orchestrator.adapter.ManifestReaderActivityImpl;
+import prepare.edt.orchestrator.adapter.PageWorkflowImpl;
+import prepare.edt.orchestrator.adapter.PlaceholderFlowWorkflowImpl;
 import prepare.edt.orchestrator.adapter.PlaceholderResponseDecoder;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
 import prepare.edt.orchestrator.adapter.ResponseDecoderActivityImpl;
@@ -25,7 +30,8 @@ import prepare.edt.orchestrator.adapter.SignProbeWorkflowImpl;
  * Starts the Orchestrator's Temporal workers when the application starts, and stops them at shutdown.
  *
  * Two workers, one per task queue:
- *   "orchestrator" - the workflows (SignProbe, ServiceRequest) and the Request Builder and Response Decoder activities
+ *   "orchestrator" - the workflows (Batch, Page, Flow, ServiceRequest, SignProbe) and the Manifest Reader,
+ *                    Request Builder and Response Decoder activities
  *   "duis-send"    - the DUIS Sender activity, shared by all Service Requests, rate-limited by the server
  *
  * Temporal creates the workflow objects itself, so CDI cannot inject into them:
@@ -40,14 +46,19 @@ public class TemporalWorker {
     private final TemporalConfig config;
     private final ServiceRequestConfig serviceRequest;
     private final DspSignatureVerifier dspSignatureVerifier;
+    private final BatchConfig batch;
+    private final ManifestReaderActivityImpl manifestReader;
     private WorkerFactory factory;
 
     TemporalWorker(WorkflowClient client, TemporalConfig config, ServiceRequestConfig serviceRequest,
-                   DspSignatureVerifier dspSignatureVerifier) {
+                   DspSignatureVerifier dspSignatureVerifier, BatchConfig batch,
+                   ManifestReaderActivityImpl manifestReader) {
         this.client = client;
         this.config = config;
         this.serviceRequest = serviceRequest;
         this.dspSignatureVerifier = dspSignatureVerifier;
+        this.batch = batch;
+        this.manifestReader = manifestReader;
     }
 
     void onStart(@Observes StartupEvent event) {
@@ -58,12 +69,19 @@ public class TemporalWorker {
         Duration responseTimeout = serviceRequest.responseTimeout();
 
         Worker orchestrator = factory.newWorker(config.taskQueue());
+        var batchSettings = new BatchWorkflowImpl.BatchSettings(batch.rowsPerPage(), batch.pagesAtATime(),
+                batch.pagesPerRun(), batch.flowsPerPage());
+        orchestrator.registerWorkflowImplementationFactory(BatchWorkflow.class,
+                () -> new BatchWorkflowImpl(batchSettings));
+        orchestrator.registerWorkflowImplementationTypes(PageWorkflowImpl.class,
+                // PLACEHOLDER Flow: one Service Request per device, until the Flow Catalogue (model 010.020).
+                PlaceholderFlowWorkflowImpl.class);
         orchestrator.registerWorkflowImplementationFactory(SignProbeWorkflow.class,
                 () -> new SignProbeWorkflowImpl(signingQueue));
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
         // PLACEHOLDER decoder: Parsec (CSW software) goes behind the same ResponseDecoder port.
-        orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
+        orchestrator.registerActivitiesImplementations(manifestReader, new RequestBuilderActivityImpl(),
                 new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
 
         // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,
@@ -84,7 +102,8 @@ public class TemporalWorker {
                 "temporal.task_queue", config.taskQueue() + "," + sendQueue,
                 "edt.gateway_url", String.valueOf(serviceRequest.gatewayUrl()),
                 "edt.response_timeout", String.valueOf(responseTimeout),
-                "edt.send_rate_per_second", String.valueOf(sendRate))) {
+                "edt.send_rate_per_second", String.valueOf(sendRate),
+                "edt.batch", batchSettings.toString())) {
             LOG.info("Temporal workers started");
         }
     }

@@ -820,9 +820,49 @@ Verified (dcc-tools running, `docker compose up -d --build batch-ingest`):
 | `--bad-signature` | `Manifest rejected: its DCC signature is not valid` on `edt.security`, no workflow |
 | same message again | `Batch already started: duplicate message`, deleted |
 
-Not yet: the Orchestrator has no `Batch` workflow, so its worker fails that workflow task ("workflow type not
-registered") and Temporal retries it. The next step adds it. Until then, terminate test Batches:
-`temporal workflow terminate --workflow-id batch-...`.
+The Orchestrator runs the `Batch` workflow since step 17.
+
+### Step 17: the Batch and Page workflows (model 010.010, step 11)
+
+```
+Batch  (ID batch-<bucket>/<key>/<version>, from Batch Ingest)
+  start Page n at the known offset, at most pages-at-a-time running
+     Page n: ReadManifestPage activity  (S3 GetObject Range: bytes=a-b, chunk by chunk, until rows-per-page rows)
+             --signal "PageRead"(n, next offset, end?)--> Batch: Page n+1 can start
+             one Flow per row, at most flows-per-page at a time  (IDs <batch>/row-<number>)
+             returns devices, invalid rows, Verdict counts
+  every pages-per-run Pages: wait for them, continue as new carrying (next Page, offset, counts)
+  end: Batch result  (logged; published to Kafka in a later step)
+Flow (PLACEHOLDER): one ServiceRequest child (8.2 hubs, 4.1.1 meters) -> RESPONDS / NO_RESPONSE / NOT_DIAGNOSED
+```
+
+| File (under `orchestrator/src/main/java/prepare/edt/orchestrator/`) | What |
+|---|---|
+| `entity/ManifestRow.java` | PLACEHOLDER CSV row `device_id,device_type,flow`, validated; invalid reasons carry no content. |
+| `usecase/ReadManifestPage.java` | Byte ranges into whole rows: a chunk may end mid-line; returns the next Page's offset. Header at offset 0; CRLF, BOM, blank lines handled. |
+| `adapter/S3ManifestBytes.java` | `GetObject` of the version with a `Range` header; 416 means past the end. |
+| `adapter/ManifestReaderActivityImpl.java` | Logs each invalid row (`manifest-row-invalid`, row number) and each Page read. Not a Manifest: non-retryable `NotAManifest`. |
+| `adapter/BatchWorkflowImpl.java` | Pages, the `PageRead` signal, continue-as-new, query `progress` (Temporal UI, Queries tab). |
+| `adapter/PageWorkflowImpl.java` | Reads, signals the Batch, runs the Flows with a limit. |
+| `adapter/PlaceholderFlowWorkflowImpl.java` | PLACEHOLDER until the Flow Catalogue (010.020). |
+| `entity/FairnessKey.java` | Fix found live: Temporal refuses a fairness key over **64 bytes**. A longer Batch ID becomes its SHA-256 (base64url, 43 characters). |
+
+Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `rows-per-page=2`, `pages-at-a-time=2`,
+`flows-per-page=2`, `pages-per-run=2`, `read-chunk-bytes=65536`. **[CONFIRM]** production values.
+
+**[INFERRED]** The model says the Page reads its rows, but the Batch needs the next Page's offset to keep several Pages
+running. So the Page signals it back (`PageRead`) as soon as it has read. The model does not draw this.
+
+Verified with `samples/manifests/sample.csv` (upload as in step 15):
+
+| Device | Service Request | Verdict |
+|---|---|---|
+| A0, A5 | RESPONDED | RESPONDS |
+| A1, A2 | FAILED_ALERT (N12, N13) | NO_RESPONSE |
+| A3 (hub, 8.2) | TIMED_OUT | NO_RESPONSE |
+
+Pages read bytes 0-99, 99-170 and 170-206. The Batch continued as new after Page 1. Result:
+`{"devices":5,"invalidRows":0,"pages":3,"verdicts":{"NO_RESPONSE":3,"RESPONDS":2}}`.
 
 ## Service interactions
 
@@ -850,4 +890,5 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | `orchestrator` | `duis-signer` | Temporal activity on the signing task queue **(working: signs in KMS)** |
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; 1/s, fair by Batch)** |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working, after checking the DSP signature)** |
+| `orchestrator` | S3 | byte-range reads of the Manifest rows **(working: Floci)** |
 | `orchestrator` | Kafka | publishes step, device and Batch results |
