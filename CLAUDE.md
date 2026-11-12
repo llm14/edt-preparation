@@ -2,7 +2,8 @@
 
 > How this file was written: from a recorded call with a colleague (the transcript was noisy,
 > so some terms were inferred) and from a LikeC4 model published as a static site. The model is
-> saved in this repo as `docs/architecture-model.md`, a read-only snapshot. It is not the editable
+> saved in this repo as `architecture-model.md` (elements, views, relations) and
+> `architecture-model-sequences-deployment.md` (sequences and deployment), read-only snapshots at the repository root. It is not the editable
 > `.c4` source. If `.c4` files are added to the repo, they replace the snapshot as the architecture
 > source of truth. If this file, the snapshot or the code disagree, report the mismatch instead of picking a side.
 > Items marked **[CONFIRM]** are unverified.
@@ -34,7 +35,7 @@ It is built on Temporal, which DCC provides.
 
 ## Architecture
 
-Full detail is in `docs/architecture-model.md`. Summary:
+Full detail is in `architecture-model.md` and `architecture-model-sequences-deployment.md`. Summary:
 
 Four containers are built by us (Java 25, Quarkus, Temporal Java SDK):
 
@@ -125,7 +126,7 @@ Resolved in the model, but worth confirming with the lead: response correlation 
 
 - **Explore before changing.** Do not write or modify code unless I ask. Prefer reading and reporting.
 - Cite file paths. Separate what you verified in the repo from what you infer.
-- Treat `docs/architecture-model.md` (or `.c4` files, if present) as the architecture reference. Flag any mismatch with the code or with this file.
+- Treat `architecture-model.md` and `architecture-model-sequences-deployment.md` (or `.c4` files, if present) as the architecture reference. Flag any mismatch with the code or with this file.
 - If the repository defines a team workflow for AI-assisted development (an agent flow with gates, review steps and
   a retrospective, started from a Jira ticket), follow it. Use it for complex work and new builds, not for tiny fixes.
 - Explain concepts briefly (Temporal, JCA, Clean Architecture) when they matter for what you find. I am learning this domain.
