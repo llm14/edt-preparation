@@ -16,7 +16,7 @@ import prepare.edt.orchestrator.adapter.PageWorkflow.PageInput;
  *     when a Page ends, add its Verdict counts
  *   every pagesPerRun Pages: wait for the running Pages, then continue as new with the offset and the counts,
  *   so the history stays small for a Manifest of any size
- *   at the end: the Batch result
+ *   at the end: the Batch result, published to Kafka
  *
  * Pages run one after the other only for the short time it takes to read rows; their Flows run in parallel.
  * Cancelling the Batch (Temporal UI) cancels its Pages, and they cancel their Flows: child workflows are cancelled
@@ -74,6 +74,10 @@ public class BatchWorkflowImpl implements BatchWorkflow {
                 progress.verdicts());
         LOG.info("Batch {} ended: {} devices, {} invalid rows, Verdicts {}", batchId, result.devices(),
                 result.invalidRows(), result.verdicts());
+        // Kafka (model 010.010, step 12): the Batch result. Its event ID is the Batch ID.
+        ResultPublisherActivity.stub().publishBatchResult(new ResultPublisherActivity.BatchResult(batchId,
+                ResultPublisherActivity.now(), batchId, result.pages(), result.devices(), result.invalidRows(),
+                result.verdicts()));
         return result;
     }
 

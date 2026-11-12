@@ -57,6 +57,7 @@ class BatchWorkflowTest {
 
     TestWorkflowEnvironment env;
     WorkflowClient client;
+    final RecordingResultPublisher kafka = new RecordingResultPublisher();
 
     void start(String csv, BatchWorkflowImpl.BatchSettings settings) {
         env = TestWorkflowEnvironment.newInstance();
@@ -64,7 +65,7 @@ class BatchWorkflowTest {
         worker.registerWorkflowImplementationFactory(BatchWorkflow.class, () -> new BatchWorkflowImpl(settings));
         worker.registerWorkflowImplementationTypes(PageWorkflowImpl.class, StandInFlow.class);
         worker.registerActivitiesImplementations(new ManifestReaderActivityImpl(
-                new ReadManifestPage(new ReadManifestPageTest.InMemory(csv), 16)));
+                new ReadManifestPage(new ReadManifestPageTest.InMemory(csv), 16)), kafka);
         env.start();
         client = env.getWorkflowClient();
     }
@@ -108,6 +109,9 @@ class BatchWorkflowTest {
         assertEquals(List.of(1L, 2L, 3L, 4L, 5L), FLOWS.keySet().stream().sorted().toList());
         assertTrue(FLOW_IDS.contains(BATCH_ID + "/row-3"));
         assertEquals(4, MAX_RUNNING.get(), "2 Pages at a time x 2 Flows per Page");
+        assertEquals(1, kafka.batches.size(), "the Batch result goes to Kafka once");
+        assertEquals(BATCH_ID, kafka.batches.get(0).eventId());
+        assertEquals(Map.of("NO_RESPONSE", 1, "RESPONDS", 4), kafka.batches.get(0).verdicts());
     }
 
     @Test

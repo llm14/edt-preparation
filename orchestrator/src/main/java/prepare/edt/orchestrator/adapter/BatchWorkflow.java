@@ -70,7 +70,7 @@ public interface BatchWorkflow {
         }
     }
 
-    /** The Batch result (published to Kafka in a later step). */
+    /** The Batch result (also published to Kafka). */
     record BatchResult(String batchId, int pages, int devices, int invalidRows, Map<String, Integer> verdicts) {
     }
 }

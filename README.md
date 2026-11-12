@@ -864,6 +864,65 @@ Verified with `samples/manifests/sample.csv` (upload as in step 15):
 Pages read bytes 0-99, 99-170 and 170-206. The Batch continued as new after Page 1. Result:
 `{"devices":5,"invalidRows":0,"pages":3,"verdicts":{"NO_RESPONSE":3,"RESPONDS":2}}`.
 
+### Step 18: Kafka (bare minimum) and the Result Publisher
+
+**dcc-tools: one broker** (`apache/kafka:4.1.0`, KRaft: no ZooKeeper, plain text, in memory). Settings in
+`dcc-tools/docker-compose.yml`:
+
+| Setting | Why |
+|---|---|
+| `KAFKA_PROCESS_ROLES=broker,controller` | One node is both the broker (stores messages) and the KRaft controller (cluster metadata). |
+| `KAFKA_LISTENERS` / `KAFKA_ADVERTISED_LISTENERS` | `INTERNAL kafka:9092` for containers, `EXTERNAL localhost:29092` for quarkus dev. A client connects to any bootstrap address, then uses the *advertised* one. |
+| `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false` | Topics exist only as created below, so their config is explicit. |
+| `*_REPLICATION_FACTOR=1` | Kafka's internal topics: one copy, one broker. |
+
+**Topics** (`dcc-tools/kafka/create-topics.sh`, one-shot `kafka-topics` service). Names are PLACEHOLDERS: DCC owns them. **[CONFIRM]**
+
+| Topic | Key | Event ID (header `event-id`) |
+|---|---|---|
+| `edt.flow-steps` | device ID | `<flow workflow ID>/step-<n>` |
+| `edt.device-results` | device ID | `<flow workflow ID>` (`<batch>/row-<n>`) |
+| `edt.batch-results` | Batch ID **[INFERRED]**: a Batch has no device | `<batch workflow ID>` |
+
+Each topic has `partitions=3`, `replication-factor=1` (production 3), `retention.ms=7 days`, `cleanup.policy=delete`
+and `min.insync.replicas=1` (production 2).
+
+The **key** decides the partition (hash of the key), so all events of one device are in one partition, in order.
+There is no order *across* partitions. In the run below, 4 of the 5 devices hashed to partition 1 and A5 to partition 0.
+
+**Orchestrator: the producer** (`infrastructure/KafkaWiring.java`, plain `kafka-clients`, no Quarkus messaging layer):
+
+| Producer setting | Why |
+|---|---|
+| `acks=all` | The broker answers once every in-sync copy has the message. |
+| `enable.idempotence=true` | The client's own resends never duplicate a message. |
+| `delivery.timeout.ms=20000` | Give up inside the activity's 30 s; then Temporal retries the activity. |
+| String key and value serializers | Key = device ID, value = JSON. Headers `event-id`, `event-type`. |
+
+| File | What |
+|---|---|
+| `usecase/EventPublisher.java` | Port: publish (topic, key, event ID, type, JSON). |
+| `adapter/KafkaEventPublisher.java` | `ProducerRecord` + headers; waits for the broker's answer (`send().get()`). |
+| `adapter/ResultPublisherActivity(Impl).java` | Model's Result Publisher Activity: `PublishFlowStep`, `PublishDeviceResult`, `PublishBatchResult`. |
+| Placeholder Flow / Batch | Publish the step and the device result / the Batch result. |
+
+A retried activity can send the same event twice: idempotence covers only the client's own resends. Consumers
+drop duplicates by `event-id` (model).
+
+Read a topic (partition, key, headers, value):
+```bash
+MSYS_NO_PATHCONV=1 docker run --rm --network edt apache/kafka:4.1.0 /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092 --topic edt.device-results --from-beginning --timeout-ms 8000   --property print.partition=true --property print.key=true --property print.headers=true
+```
+
+Verified with the sample Manifest: 11 messages (5 steps, 5 device results, 1 Batch result). A device result:
+```
+Partition:1  event-id:batch-.../row-1,event-type:DeviceResult  00-DB-12-34-56-78-90-A0
+{"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-90-A0","rowNumber":1,"flow":"flow-1","verdict":"RESPONDS"}
+```
+
+Seen once in that run: A3's 2-minute timer fired after 5 min 50 s (the history shows `startToFireTimeout: 120s`).
+Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine paused?), not the code. Watch for it.
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `batch-ingest` (SQS, S3, KMS Verify, starts the Batch), `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),
@@ -891,4 +950,4 @@ orchestrator <-- runs Batch, Page, Flow, Service Request workflows
 | `orchestrator` | DSP Gateway | HTTP POST of the signed Service Request, once, rate-limited **(working: DSP simulator; 1/s, fair by Batch)** |
 | `response-listener` | Temporal | signals the Service Request workflow (ID from the Request ID) **(working, after checking the DSP signature)** |
 | `orchestrator` | S3 | byte-range reads of the Manifest rows **(working: Floci)** |
-| `orchestrator` | Kafka | publishes step, device and Batch results |
+| `orchestrator` | Kafka | publishes step, device and Batch results **(working: one broker in dcc-tools)** |

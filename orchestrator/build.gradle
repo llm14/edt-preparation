@@ -29,6 +29,11 @@ dependencies {
     }
     implementation libs.awssdk.url.connection.client
 
+    // Kafka: the plain producer client (no Quarkus messaging layer), so every setting is visible in our code.
+    implementation libs.kafka.clients
+    // JSON of the Kafka events.
+    implementation libs.jackson.databind
+
     // Tests: JUnit 5 and ArchUnit (architecture rules).
     testImplementation libs.junit.jupiter
     testImplementation libs.archunit

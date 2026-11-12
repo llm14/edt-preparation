@@ -2,6 +2,7 @@ package prepare.edt.orchestrator.adapter;
 
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
+import java.util.Map;
 import org.slf4j.Logger;
 import prepare.edt.orchestrator.entity.RequestId;
 
@@ -26,6 +27,8 @@ public class PlaceholderFlowWorkflowImpl implements FlowWorkflow {
     static final String NO_RESPONSE = "NO_RESPONSE";
     static final String NOT_DIAGNOSED = "NOT_DIAGNOSED";
 
+    private final ResultPublisherActivity publisher = ResultPublisherActivity.stub();
+
     @Override
     public String run(FlowInput input) {
         String srv = "CHF".equals(input.deviceType()) ? "8.2" : "4.1.1";
@@ -43,6 +46,14 @@ public class PlaceholderFlowWorkflowImpl implements FlowWorkflow {
             default -> NOT_DIAGNOSED;
         };
         LOG.info("Flow for row {} ({}): {} -> Verdict {}", input.rowNumber(), input.deviceId(), outcome.status(), verdict);
+
+        // Kafka (model 010.020, steps 4 and 5): the step, then the device Flow result. Event IDs from the workflow ID.
+        String flowId = Workflow.getInfo().getWorkflowId();
+        publisher.publishFlowStep(new ResultPublisherActivity.FlowStep(flowId + "/step-1", ResultPublisherActivity.now(),
+                input.batchId(), input.deviceId(), input.rowNumber(), 1, srv, requestId.value(), outcome.status(),
+                outcome.alertCode(), outcome.facts() == null ? Map.of() : outcome.facts().values()));
+        publisher.publishDeviceResult(new ResultPublisherActivity.DeviceResult(flowId, ResultPublisherActivity.now(),
+                input.batchId(), input.deviceId(), input.rowNumber(), input.flow(), verdict));
         return verdict;
     }
 }

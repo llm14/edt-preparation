@@ -38,6 +38,7 @@ class PlaceholderFlowWorkflowTest {
     }
 
     TestWorkflowEnvironment env;
+    final RecordingResultPublisher kafka = new RecordingResultPublisher();
 
     @AfterEach
     void tearDown() {
@@ -46,8 +47,9 @@ class PlaceholderFlowWorkflowTest {
 
     String verdict(String deviceId, String deviceType) {
         env = TestWorkflowEnvironment.newInstance();
-        env.newWorker("orchestrator").registerWorkflowImplementationTypes(PlaceholderFlowWorkflowImpl.class,
-                StandInServiceRequest.class);
+        var worker = env.newWorker("orchestrator");
+        worker.registerWorkflowImplementationTypes(PlaceholderFlowWorkflowImpl.class, StandInServiceRequest.class);
+        worker.registerActivitiesImplementations(kafka);
         env.start();
         REQUESTS.clear();
         return env.getWorkflowClient().newWorkflowStub(FlowWorkflow.class, WorkflowOptions.newBuilder()
@@ -63,6 +65,12 @@ class PlaceholderFlowWorkflowTest {
         assertTrue(REQUESTS.get(0).startsWith("service-request-90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:"),
                 "the Service Request workflow ID comes from the Request ID, as the Response Listener expects");
         assertTrue(REQUESTS.get(0).endsWith(" 4.1.1 batch-1"), "meters get 4.1.1; the Batch is the fairness key");
+        assertEquals(1, kafka.steps.size());
+        assertEquals("batch-1/row-1/step-1", kafka.steps.get(0).eventId());
+        assertEquals("RESPONDED", kafka.steps.get(0).status());
+        assertEquals(1, kafka.devices.size());
+        assertEquals("batch-1/row-1", kafka.devices.get(0).eventId());
+        assertEquals("RESPONDS", kafka.devices.get(0).verdict());
     }
 
     @Test

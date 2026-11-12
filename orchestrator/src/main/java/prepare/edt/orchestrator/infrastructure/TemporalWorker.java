@@ -21,6 +21,7 @@ import prepare.edt.orchestrator.adapter.PlaceholderFlowWorkflowImpl;
 import prepare.edt.orchestrator.adapter.PlaceholderResponseDecoder;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
 import prepare.edt.orchestrator.adapter.ResponseDecoderActivityImpl;
+import prepare.edt.orchestrator.adapter.ResultPublisherActivityImpl;
 import prepare.edt.orchestrator.adapter.ServiceRequestWorkflow;
 import prepare.edt.orchestrator.adapter.ServiceRequestWorkflowImpl;
 import prepare.edt.orchestrator.adapter.SignProbeWorkflow;
@@ -48,17 +49,19 @@ public class TemporalWorker {
     private final DspSignatureVerifier dspSignatureVerifier;
     private final BatchConfig batch;
     private final ManifestReaderActivityImpl manifestReader;
+    private final ResultPublisherActivityImpl resultPublisher;
     private WorkerFactory factory;
 
     TemporalWorker(WorkflowClient client, TemporalConfig config, ServiceRequestConfig serviceRequest,
                    DspSignatureVerifier dspSignatureVerifier, BatchConfig batch,
-                   ManifestReaderActivityImpl manifestReader) {
+                   ManifestReaderActivityImpl manifestReader, ResultPublisherActivityImpl resultPublisher) {
         this.client = client;
         this.config = config;
         this.serviceRequest = serviceRequest;
         this.dspSignatureVerifier = dspSignatureVerifier;
         this.batch = batch;
         this.manifestReader = manifestReader;
+        this.resultPublisher = resultPublisher;
     }
 
     void onStart(@Observes StartupEvent event) {
@@ -81,7 +84,7 @@ public class TemporalWorker {
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
         // PLACEHOLDER decoder: Parsec (CSW software) goes behind the same ResponseDecoder port.
-        orchestrator.registerActivitiesImplementations(manifestReader, new RequestBuilderActivityImpl(),
+        orchestrator.registerActivitiesImplementations(manifestReader, resultPublisher, new RequestBuilderActivityImpl(),
                 new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
 
         // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,

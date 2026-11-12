@@ -1,5 +1,5 @@
 # The DCC side of the EDT, for local development. In production DCC provides and runs these.
-# For now: Temporal (server, PostgreSQL, UI), Floci (AWS KMS, S3, SQS) and the DSP simulator. Kafka comes later.
+# Temporal (server, PostgreSQL, UI), Floci (AWS KMS, S3, SQS), Kafka and the DSP simulator.
 #
 #   docker network create edt     # once, shared with the root docker-compose.yml
 #   ./gradlew installDist              # from this folder: builds kms-setup and dsp-simulator
@@ -139,6 +139,47 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+
+  # Kafka: one broker in KRaft mode (Kafka keeps its own metadata; no ZooKeeper). Plain text, no authentication:
+  # in production DCC runs the cluster, with mutual TLS (to be confirmed with DCC). In memory: no volume.
+  #
+  # A listener is an address the broker listens on; "advertised" is the address it tells clients to use.
+  #   INTERNAL   kafka:9092       the EDT containers and tools on the edt network
+  #   EXTERNAL   localhost:29092  apps running on your machine (quarkus dev)
+  #   CONTROLLER :9093            KRaft: the broker talking to its own controller
+  kafka:
+    image: apache/kafka:4.1.0
+    ports:
+      - "29092:29092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller        # one node plays both roles
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"      # topics only from kafka-topics below: their config is explicit
+      # Kafka's own internal topics: one copy each, as there is one broker.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    healthcheck:
+      test: ["CMD", "/opt/kafka/bin/kafka-topics.sh", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+
+  # One-shot: creates the EDT topics (kafka/create-topics.sh), then exits.
+  kafka-topics:
+    image: apache/kafka:4.1.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka:/scripts:ro
+    entrypoint: ["/bin/sh", "/scripts/create-topics.sh"]
 
   # Run on demand (not started by "up"): signs a Manifest with DCC's key, uploads it, puts the message on the queue.
   #   docker compose run --rm manifest-upload /manifests/sample.csv [--bad-signature]

@@ -29,6 +29,8 @@ quarkus-rest = { module = "io.quarkus:quarkus-rest" }
 
 # Jackson: version from the Quarkus BOM.
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" }
+# Kafka producer client: version from the Quarkus BOM.
+kafka-clients = { module = "org.apache.kafka:kafka-clients" }
 
 # Tests. JUnit versions also come from the Quarkus BOM.
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
