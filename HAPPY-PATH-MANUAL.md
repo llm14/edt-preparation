@@ -83,14 +83,14 @@ Look in the Temporal UI: workflow `batch-edt-manifests/one-device.csv/<version>`
 
 | # | App | File:line | What to inspect |
 |---|---|---|---|
-| 13 | orchestrator | `adapter/BatchWorkflowImpl.java:45` (`run`) | `input`; the settings (rows-per-page 2, pages-at-a-time 2) |
-| 14 | orchestrator | `adapter/BatchWorkflowImpl.java:84` (`startPage`) then `:99` (`Async.function(child::run ...)`) | the Batch starts a child Page workflow |
+| 13 | orchestrator | `adapter/BatchWorkflowImpl.java:45` (`processManifest`) | `input`; the settings (rows-per-page 2, pages-at-a-time 2) |
+| 14 | orchestrator | `adapter/BatchWorkflowImpl.java:84` (`startPage`) then `:99` (`Async.function(child::processPage ...)`) | the Batch starts a child Page workflow |
 | 15 | orchestrator | `adapter/PageWorkflowImpl.java:45` (`reader.readPage`) | the Page calls an ACTIVITY to read the rows |
 | 16 | orchestrator | `adapter/ManifestReaderActivityImpl.java:29` (`readPage`) | `request.offset()`, `request.rows()` |
 | 17 | orchestrator | `adapter/S3ManifestBytes.java:23` (`getObjectAsBytes`) | the `Range: bytes=...` header (line 27) |
 | 18 | orchestrator | `adapter/PageWorkflowImpl.java:50` (`pageRead` signal) | the Page tells the Batch where the next Page starts (the inferred signal, not in the model) |
 | 19 | orchestrator | `adapter/PageWorkflowImpl.java:62` (`startFlow`) | one Flow per row |
-| 20 | orchestrator | `adapter/PlaceholderFlowWorkflowImpl.java:33` (`run`) | `srv` chosen from the device type; the Request ID |
+| 20 | orchestrator | `adapter/PlaceholderFlowWorkflowImpl.java:33` (`diagnoseDevice`) | `srv` chosen from the device type; the Request ID |
 
 ### Step 6: Service Request workflow: build, sign
 
@@ -98,7 +98,7 @@ Look in the Temporal UI: workflow `batch-edt-manifests/one-device.csv/<version>`
 
 | # | App | File:line | What to inspect |
 |---|---|---|---|
-| 21 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:80` (`run`) | workflow ID = `service-request-<RequestId>` (UI) |
+| 21 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:80` (`executeServiceRequest`) | workflow ID = `service-request-<RequestId>` (UI) |
 | 22 | orchestrator | `adapter/RequestBuilderActivityImpl.java:10` (`build`) | the unsigned XML (activity on the `orchestrator` queue) |
 | 23 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:85` (`signer.sign`) | this call goes OUT through Temporal to the `duis-signing` queue |
 | 24 | duis-signer | `adapter/SignActivityImpl.java:18` (`sign`) | the activity arrives in a different process |
@@ -219,7 +219,15 @@ The names in **bold** are the boxes in the model.
 
 *Checking it is genuine*
 5. Batch Ingest reads the file from the bucket and works out a fingerprint (a hash) of it.
+   - **What a hash is:** a short, fixed-size value calculated from the whole content of the file (here SHA-256, always 32 bytes, however big the file is). The same file always gives the same hash. Change a single character and you get a completely different one. It is the file's fingerprint.
+   - **Why it needs one:** DCC did not sign the file directly. When it signed the Manifest, it calculated the file's hash and signed that. The signature is stored next to the file, as a tag on the S3 object. To check it, Batch Ingest must first calculate the hash of the file it has just downloaded, with the same method, and see whether it matches what DCC signed.
+   - **How it reads the file:** it streams it from the bucket, a chunk at a time, and feeds each chunk into the hash calculation as it arrives. It never holds the whole file in memory, so a Manifest of any size works.
+   - **Caveat:** "DCC signs the hash" is how our `manifest-upload` stand-in works, and it matches the model (the verifier checks a digest and a signature with KMS Verify). How the real DCC attaches its signature (the tag name and format) is still to be agreed with DCC (open point 4 in `CLAUDE.md`).
+   - **What comes out:** only the 32-byte fingerprint. The file itself is not kept and is not sent anywhere else.
+   - **Where to see it:** breakpoints 6 and 7 in section 1, step 3 (`S3ManifestVerifier.java:61` and `KmsVerifySignatureSpi.java:60`).
 6. It asks **KMS**: "does this signature match this fingerprint, using DCC's key?" KMS says yes.
+   - Batch Ingest sends KMS two small things: the 32-byte fingerprint it just calculated, and the signature it read from the S3 tag. It does not send the file.
+   - KMS holds DCC's key and answers yes or no. A "yes" means: this signature was made by DCC, over exactly this fingerprint, so the file is exactly what DCC signed. Batch Ingest never sees the key.
 7. If the answer were no, the Manifest would be thrown away and nothing would start.
 
 *Handing over to Temporal*
