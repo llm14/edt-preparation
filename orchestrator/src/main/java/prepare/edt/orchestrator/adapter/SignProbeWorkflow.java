@@ -15,5 +15,5 @@ import io.temporal.workflow.WorkflowMethod;
 public interface SignProbeWorkflow {
 
     @WorkflowMethod(name = "SignProbe")
-    SignOutcome run(String unsignedServiceRequest);
+    SignOutcome probeSigning(String unsignedServiceRequest);
 }

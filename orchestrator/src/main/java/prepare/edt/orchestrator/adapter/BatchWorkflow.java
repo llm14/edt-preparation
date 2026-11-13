@@ -17,7 +17,7 @@ import java.util.TreeMap;
 public interface BatchWorkflow {
 
     @WorkflowMethod(name = "Batch")
-    BatchResult run(BatchInput input);
+    BatchResult processManifest(BatchInput input);
 
     /** From a Page, once it has read its rows: where the next Page starts. [INFERRED] the model does not draw it. */
     @SignalMethod(name = "PageRead")

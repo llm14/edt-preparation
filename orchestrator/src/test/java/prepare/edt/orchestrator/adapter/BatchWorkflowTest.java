@@ -45,7 +45,7 @@ class BatchWorkflowTest {
 
     public static class StandInFlow implements FlowWorkflow {
         @Override
-        public String run(FlowInput input) {
+        public String diagnoseDevice(FlowInput input) {
             MAX_RUNNING.accumulateAndGet(RUNNING.incrementAndGet(), Math::max);
             Workflow.sleep(Duration.ofSeconds(10));   // so that Flows overlap
             RUNNING.decrementAndGet();

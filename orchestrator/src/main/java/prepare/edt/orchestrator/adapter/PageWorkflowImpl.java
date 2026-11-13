@@ -41,7 +41,7 @@ public class PageWorkflowImpl implements PageWorkflow {
     private int running;
 
     @Override
-    public PageResult run(PageInput input) {
+    public PageResult processPage(PageInput input) {
         PageRows rows = reader.readPage(new ManifestReaderActivity.Request(input.bucket(), input.key(),
                 input.versionId(), input.offset(), input.rows(), input.firstRowNumber()));
 
@@ -64,7 +64,7 @@ public class PageWorkflowImpl implements PageWorkflow {
                 .setWorkflowId(WorkflowIds.flow(batchId, row.rowNumber()))
                 .build());
         running++;
-        Async.function(flow::run, new FlowInput(batchId, row.rowNumber(), row.deviceId(), row.deviceType(), row.flow()))
+        Async.function(flow::diagnoseDevice, new FlowInput(batchId, row.rowNumber(), row.deviceId(), row.deviceType(), row.flow()))
                 .handle((verdict, error) -> {
                     running--;
                     verdicts.merge(error == null ? verdict : FLOW_FAILED, 1, Integer::sum);

@@ -46,7 +46,7 @@ class SignProbeWorkflowTest {
                 new SignOutcome(SignOutcome.SIGNED, "REQ-1", "OTHER_USER", request + "<Signature/>", null));
         env.start();
 
-        SignOutcome outcome = newWorkflow().run("<request/>");
+        SignOutcome outcome = newWorkflow().probeSigning("<request/>");
 
         assertEquals(new SignOutcome("SIGNED", "REQ-1", "OTHER_USER", "<request/><Signature/>", null), outcome);
     }
@@ -60,7 +60,7 @@ class SignProbeWorkflowTest {
         });
         env.start();
 
-        SignOutcome outcome = newWorkflow().run("<request/>");
+        SignOutcome outcome = newWorkflow().probeSigning("<request/>");
 
         assertEquals("REFUSED", outcome.status());
         assertEquals("SRV not allowed", outcome.refusalReason());
@@ -76,7 +76,7 @@ class SignProbeWorkflowTest {
         });
         env.start();
 
-        assertThrows(WorkflowFailedException.class, () -> newWorkflow().run("<request/>"));
+        assertThrows(WorkflowFailedException.class, () -> newWorkflow().probeSigning("<request/>"));
         assertEquals(3, calls.get(), "maximum 3 attempts");
     }
 

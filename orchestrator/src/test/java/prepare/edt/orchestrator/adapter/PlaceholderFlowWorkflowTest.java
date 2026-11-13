@@ -21,7 +21,7 @@ class PlaceholderFlowWorkflowTest {
 
     public static class StandInServiceRequest implements ServiceRequestWorkflow {
         @Override
-        public ServiceRequestOutcome run(ServiceRequestInput input) {
+        public ServiceRequestOutcome executeServiceRequest(ServiceRequestInput input) {
             REQUESTS.add(Workflow.getInfo().getWorkflowId() + " " + input.srv() + " " + input.batchId());
             String status = switch (input.targetDevice().substring(21)) {
                 case "A0" -> ServiceRequestOutcome.RESPONDED;
@@ -54,7 +54,7 @@ class PlaceholderFlowWorkflowTest {
         REQUESTS.clear();
         return env.getWorkflowClient().newWorkflowStub(FlowWorkflow.class, WorkflowOptions.newBuilder()
                         .setWorkflowId("batch-1/row-1").setTaskQueue("orchestrator").build())
-                .run(new FlowInput("batch-1", 1, deviceId, deviceType, "flow-1"));
+                .diagnoseDevice(new FlowInput("batch-1", 1, deviceId, deviceType, "flow-1"));
     }
 
     @Test
