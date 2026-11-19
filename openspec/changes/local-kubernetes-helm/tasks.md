@@ -32,8 +32,8 @@
 
 ## 6. End-to-end check
 
-- [ ] 6.1 Run the happy path on the cluster: upload the one-device sample Manifest with `manifest-upload` on the host through the Floci port-forward, as in HAPPY-PATH-MANUAL.md. Verify: Batch, Page and Flow workflows complete in the Temporal UI, and a Batch result event is on the Batch-results Kafka topic.
-- [ ] 6.2 Verify the asynchronous Response: after the simulator's delay the Response Listener logs the signal and the Service Request workflow finishes. Record any difference from the Compose run in HAPPY-PATH-MANUAL.md as a "cluster" note.
+- [x] 6.1 Run the happy path on the cluster: upload the one-device sample Manifest with `manifest-upload` on the host through the Floci port-forward, as in HAPPY-PATH-MANUAL.md. Verify: Batch, Page and Flow workflows complete in the Temporal UI, and a Batch result event is on the Batch-results Kafka topic.
+- [x] 6.2 Verify the asynchronous Response: after the simulator's delay the Response Listener logs the signal and the Service Request workflow finishes. Record any difference from the Compose run in HAPPY-PATH-MANUAL.md as a "cluster" note.
 
 ## Workflow follow-up
 
