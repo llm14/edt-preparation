@@ -103,6 +103,9 @@ Field names follow the ones already in use (`edt.request_id`, `edt.manifest.row`
    the JBoss log manager, and an `ExtHandler` added to `LogContext.getLogContext().getLogger("")` receives the workflow's
    records, each with its MDC (`getMdcCopy()`), without setting any JVM property. For replay, use `WorkflowReplayer` on a
    recorded history and count only the records of the workflow's own logger (the replayer adds its own shutdown logs).
+   Applying it: the capture helper (`LogCapture`, a test class) also sets the root logger to INFO while it runs and restores
+   it on close, because Gradle's test worker sets a higher root level unless it runs with `-i`, which silently dropped the
+   workflows' INFO lines (the first version of the tests passed only with `-i`).
 *Rejected:* a `@QuarkusTest` that captures console output (adds a test framework to every app and the capture is awkward);
 a unit test that builds the JSON formatter by hand (it would have to copy Quarkus's own ECS wiring, so it could pass while the
 real app differs).

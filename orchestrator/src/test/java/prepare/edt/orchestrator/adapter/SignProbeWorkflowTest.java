@@ -1,6 +1,7 @@
 package prepare.edt.orchestrator.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.temporal.client.WorkflowFailedException;
@@ -78,6 +79,43 @@ class SignProbeWorkflowTest {
 
         assertThrows(WorkflowFailedException.class, () -> newWorkflow().probeSigning("<request/>"));
         assertEquals(3, calls.get(), "maximum 3 attempts");
+    }
+
+    @Test
+    void the_probe_lines_carry_their_data_as_fields() {
+        try (LogCapture log = new LogCapture()) {
+            signerWorker.registerActivitiesImplementations((SignActivity) request ->
+                    new SignOutcome(SignOutcome.REFUSED, "REQ-1", null, null, "SRV not allowed"));
+            env.start();
+
+            newWorkflow().probeSigning("<request/>");
+
+            var started = log.lines(SignProbeWorkflowImpl.class, "Asking the DUIS Signer to sign");
+            assertEquals(1, started.size());
+            assertEquals("sign-probe-started", started.get(0).fields().get("event.action"));
+
+            var outcome = log.lines(SignProbeWorkflowImpl.class, "Sign outcome");
+            assertEquals(1, outcome.size(), "the message text is constant");
+            assertEquals("sign-probe-outcome", outcome.get(0).fields().get("event.action"));
+            assertEquals("REFUSED", outcome.get(0).fields().get("edt.status"));
+            assertEquals("SRV not allowed", outcome.get(0).fields().get("edt.refusal_reason"));
+        }
+    }
+
+    @Test
+    void a_signed_outcome_has_no_refusal_reason_field() {
+        try (LogCapture log = new LogCapture()) {
+            signerWorker.registerActivitiesImplementations((SignActivity) request ->
+                    new SignOutcome(SignOutcome.SIGNED, "REQ-1", "OTHER_USER", request + "<Signature/>", null));
+            env.start();
+
+            newWorkflow().probeSigning("<request/>");
+
+            var outcome = log.lines(SignProbeWorkflowImpl.class, "Sign outcome");
+            assertEquals(1, outcome.size());
+            assertEquals("SIGNED", outcome.get(0).fields().get("edt.status"));
+            assertFalse(outcome.get(0).fields().containsKey("edt.refusal_reason"));
+        }
     }
 
     private SignProbeWorkflow newWorkflow() {

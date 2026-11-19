@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.Map;
 import java.util.TreeMap;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.adapter.FlowWorkflow.FlowInput;
 import prepare.edt.orchestrator.adapter.ManifestReaderActivity.PageRows;
 import prepare.edt.orchestrator.entity.ManifestRow;
@@ -55,7 +56,10 @@ public class PageWorkflowImpl implements PageWorkflow {
         }
         Workflow.await(() -> running == 0);
 
-        LOG.info("Page {} ended: {} devices, Verdicts {}", input.page(), rows.rows().size(), verdicts);
+        try (var fields = LogFields.of("event.action", "page-ended", "edt.page", input.page(),
+                "edt.devices", rows.rows().size(), "edt.verdicts", verdicts)) {
+            LOG.info("Page ended");
+        }
         return new PageResult(rows.rows().size(), rows.invalidRows(), verdicts);
     }
 

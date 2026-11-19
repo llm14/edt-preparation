@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.entity.DccAlerts;
 import prepare.edt.orchestrator.entity.FairnessKey;
 import prepare.edt.orchestrator.entity.Facts;
@@ -119,7 +120,10 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
                 return outcome(ServiceRequestOutcome.FAILED_ALERT, requestId, null, message.alertCode(),
                         "DCC Alert " + message.alertCode());
             }
-            LOG.info("DCC Alert {} for {}: keep waiting", message.alertCode(), requestId);
+            try (var fields = LogFields.of("event.action", "dcc-alert-received", "edt.alert_code", message.alertCode(),
+                    "edt.request_id", requestId)) {
+                LOG.info("DCC Alert received, still waiting");
+            }
         }
     }
 
@@ -140,7 +144,10 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
 
     private static ServiceRequestOutcome outcome(String status, String requestId, Facts facts,
                                                  String alertCode, String detail) {
-        LOG.info("Service Request {} ended: {}", requestId, status);
+        try (var fields = LogFields.of("event.action", "service-request-ended", "edt.request_id", requestId,
+                "edt.status", status)) {
+            LOG.info("Service Request ended");
+        }
         return new ServiceRequestOutcome(status, requestId, facts, alertCode, detail);
     }
 

@@ -13,7 +13,7 @@ import org.jboss.logging.MDC;
  * }
  * </pre>
  *
- * The fields go into the MDC (Mapped Diagnostic Context), which the JSON log writes as "mdc": {...}.
+ * The fields go into the MDC (Mapped Diagnostic Context), which the JSON log writes as top-level fields (quarkus.log.console.json.mdc.flat-fields=true).
  */
 public final class LogFields implements AutoCloseable {
 
@@ -22,14 +22,14 @@ public final class LogFields implements AutoCloseable {
     private LogFields() {
     }
 
-    /** Takes pairs: key1, value1, key2, value2, ... */
-    public static LogFields of(String... keyValues) {
+    /** Takes pairs: key1, value1, key2, value2, ... Keys are text; a value of any type is written as its text. */
+    public static LogFields of(Object... keyValues) {
         if (keyValues.length % 2 != 0) {
             throw new IllegalArgumentException("LogFields.of needs key-value pairs");
         }
         LogFields fields = new LogFields();
         for (int i = 0; i < keyValues.length; i += 2) {
-            fields.add(keyValues[i], keyValues[i + 1]);
+            fields.add(String.valueOf(keyValues[i]), keyValues[i + 1]);
         }
         return fields;
     }

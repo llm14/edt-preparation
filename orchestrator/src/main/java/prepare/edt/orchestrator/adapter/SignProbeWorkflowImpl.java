@@ -5,6 +5,7 @@ import io.temporal.common.RetryOptions;
 import io.temporal.workflow.Workflow;
 import java.time.Duration;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.LogFields;
 
 /**
  * Workflow code must be deterministic: Temporal replays it from its history to rebuild its state.
@@ -32,10 +33,16 @@ public class SignProbeWorkflowImpl implements SignProbeWorkflow {
 
     @Override
     public SignOutcome probeSigning(String unsignedServiceRequest) {
-        LOG.info("Asking the DUIS Signer to sign");
+        try (var fields = LogFields.of("event.action", "sign-probe-started")) {
+            LOG.info("Asking the DUIS Signer to sign");
+        }
         SignOutcome outcome = signer.sign(unsignedServiceRequest);
-        LOG.info("Sign outcome: {} {}", outcome.status(),
-                outcome.refusalReason() == null ? "" : outcome.refusalReason());
+        try (var fields = LogFields.of("event.action", "sign-probe-outcome", "edt.status", outcome.status())) {
+            if (outcome.refusalReason() != null) {
+                fields.add("edt.refusal_reason", outcome.refusalReason());
+            }
+            LOG.info("Sign outcome");
+        }
         return outcome;
     }
 }

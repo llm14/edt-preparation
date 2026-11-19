@@ -85,4 +85,20 @@ class PlaceholderFlowWorkflowTest {
         env.close();
         assertEquals("NOT_DIAGNOSED", verdict("00-DB-12-34-56-78-90-A4", "ESME"));
     }
+
+    @Test
+    void the_flow_line_carries_its_data_as_fields() {
+        try (LogCapture log = new LogCapture()) {
+            verdict("00-DB-12-34-56-78-90-A0", "ESME");
+
+            var lines = log.lines(PlaceholderFlowWorkflowImpl.class, "Flow ended");
+            assertEquals(1, lines.size(), "the message text is constant, and the line is written once");
+            var fields = lines.get(0).fields();
+            assertEquals("flow-ended", fields.get("event.action"));
+            assertEquals("1", fields.get("edt.manifest.row"));
+            assertEquals("00-DB-12-34-56-78-90-A0", fields.get("edt.device_id"));
+            assertEquals("RESPONDED", fields.get("edt.status"));
+            assertEquals("RESPONDS", fields.get("edt.verdict"));
+        }
+    }
 }

@@ -219,6 +219,47 @@ class ServiceRequestWorkflowTest {
         assertEquals(1, sends.get(), "the sender posts once: no retry of its own");
     }
 
+    @Test
+    void the_ended_line_carries_the_request_id_and_status_as_fields() {
+        try (LogCapture log = new LogCapture()) {
+            signerSigns();
+            dspAccepts();
+            env.start();
+
+            ServiceRequestWorkflow workflow = start();
+            signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
+            result(workflow);
+
+            var lines = log.lines(ServiceRequestWorkflowImpl.class, "Service Request ended");
+            assertEquals(1, lines.size(), "the message text is constant, and the line is written once");
+            var fields = lines.get(0).fields();
+            assertEquals("service-request-ended", fields.get("event.action"));
+            assertEquals(INPUT.requestId(), fields.get("edt.request_id"));
+            assertEquals("RESPONDED", fields.get("edt.status"));
+        }
+    }
+
+    @Test
+    void an_alert_that_does_not_end_the_wait_is_logged_with_its_code_and_request_id() {
+        try (LogCapture log = new LogCapture()) {
+            signerSigns();
+            dspAccepts();
+            env.start();
+
+            ServiceRequestWorkflow workflow = start();
+            signal(new DspMessage(DspMessage.DCC_ALERT, "N53", "<Alert/>"));
+            signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
+            result(workflow);
+
+            var lines = log.lines(ServiceRequestWorkflowImpl.class, "DCC Alert received, still waiting");
+            assertEquals(1, lines.size());
+            var fields = lines.get(0).fields();
+            assertEquals("dcc-alert-received", fields.get("event.action"));
+            assertEquals("N53", fields.get("edt.alert_code"));
+            assertEquals(INPUT.requestId(), fields.get("edt.request_id"));
+        }
+    }
+
     // --- helpers ---
 
     void signerSigns() {
