@@ -74,7 +74,7 @@ None. There are no specs yet.
   the JDK and a free port 4566). The alternatives are an in-cluster Job (needs RBAC and a `kubectl` image) and kms-setup
   talking to the Kubernetes API itself (a code change in dcc-tools). See design.md, decision 6.
 - **Floci is in memory.** A Floci pod restart loses KMS keys, the bucket and the queue, so the Secrets no longer match.
-  How to recover (re-run the Job, or accept a full reinstall) needs a decision.
+  How to recover (re-run the install script's secrets step, or accept a full reinstall) needs a decision.
 - **Namespace for Temporal.** The model has a `temporal` namespace. This plan puts Temporal, Kafka, Floci and the
   simulator together in `dcc-tools`. Splitting Temporal out is possible but adds setup.
 - **Kafka authentication.** Plain text locally, as in Compose. Mutual TLS is still to be confirmed with DCC (open point
