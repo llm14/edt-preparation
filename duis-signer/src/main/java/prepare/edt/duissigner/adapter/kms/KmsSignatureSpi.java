@@ -31,10 +31,15 @@ final class KmsSignatureSpi extends SignatureSpi {
     private KmsPrivateKey signingKey;
     private Signature localVerifier;
 
+    /** Receives the KMS client from the provider, so the engine can call KMS without a static field. */
     KmsSignatureSpi(KmsClient kms) {
         this.kms = kms;
     }
 
+    /**
+     * Gets the engine ready to sign: accepts only a {@link KmsPrivateKey} from this provider's own KeyStore,
+     * remembers it, and starts a fresh local SHA-256 digest.
+     */
     @Override
     protected void engineInitSign(PrivateKey key) throws InvalidKeyException {
         if (!(key instanceof KmsPrivateKey kmsKey)) {
@@ -45,6 +50,7 @@ final class KmsSignatureSpi extends SignatureSpi {
         digest = sha256();
     }
 
+    /** Gets the engine ready to verify: creates a local SunEC verifier for the public key, because verifying never needs KMS. */
     @Override
     protected void engineInitVerify(PublicKey key) throws InvalidKeyException {
         try {
@@ -56,11 +62,16 @@ final class KmsSignatureSpi extends SignatureSpi {
         }
     }
 
+    /** Feeds one byte into the signature by passing it to the array version. */
     @Override
     protected void engineUpdate(byte b) throws SignatureException {
         engineUpdate(new byte[] {b}, 0, 1);
     }
 
+    /**
+     * Feeds data into the local verifier when verifying, or into the SHA-256 digest when signing,
+     * and fails if the engine has not been initialised.
+     */
     @Override
     protected void engineUpdate(byte[] bytes, int offset, int length) throws SignatureException {
         if (localVerifier != null) {
@@ -72,6 +83,10 @@ final class KmsSignatureSpi extends SignatureSpi {
         }
     }
 
+    /**
+     * Finishes the SHA-256 hash and sends the 32-byte digest to KMS Sign (DIGEST, ECDSA_SHA_256), returning the DER
+     * signature and wrapping any KMS failure in a SignatureException.
+     */
     @Override
     protected byte[] engineSign() throws SignatureException {
         if (signingKey == null) {
@@ -91,6 +106,7 @@ final class KmsSignatureSpi extends SignatureSpi {
         }
     }
 
+    /** Checks the given signature with the local verifier and returns true or false. */
     @Override
     protected boolean engineVerify(byte[] signature) throws SignatureException {
         if (localVerifier == null) {
@@ -99,18 +115,21 @@ final class KmsSignatureSpi extends SignatureSpi {
         return localVerifier.verify(signature);
     }
 
+    /** The old JCA hook for setting an algorithm parameter, which this provider does not support. */
     @Override
     @Deprecated
     protected void engineSetParameter(String param, Object value) {
         throw new InvalidParameterException("not supported");
     }
 
+    /** The old JCA hook for reading an algorithm parameter, unsupported for the same reason. */
     @Override
     @Deprecated
     protected Object engineGetParameter(String param) {
         throw new InvalidParameterException("not supported");
     }
 
+    /** Creates a SHA-256 digest, turning the checked exception into an IllegalStateException because every JDK has SHA-256. */
     private static MessageDigest sha256() {
         try {
             return MessageDigest.getInstance("SHA-256");
