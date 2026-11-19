@@ -82,7 +82,7 @@ try (var fields = LogFields.of("event.action", "startup")) {
 
 Output in JSON (shortened):
 ```
-{"@timestamp":"...","log.level":"INFO","message":"DUIS Signer started","mdc":{"event.action":"startup"},"service.name":"duis-signer"}
+{"@timestamp":"...","log.level":"INFO","message":"DUIS Signer started","event.action":"startup","service.name":"duis-signer"}
 ```
 
 Output in dev:
@@ -93,7 +93,13 @@ Output in dev:
 Key ideas:
 - **MDC** (Mapped Diagnostic Context): fields attached to the current thread, added to every log line until removed.
   `LogFields` removes them when the `try` block ends.
-- Custom fields appear under `mdc`, not at the top level.
+- Custom fields are written at the top level of the JSON line, under their own name (`event.action`), because
+  `quarkus.log.console.json.mdc.flat-fields=true` is set in each app. There is no nested `mdc` object. Temporal adds its own
+  keys the same way (`WorkflowId`, `RunId`, `ActivityType`, ...).
+- A key appears at most once in a line. `error.message` and `error.type` come from one source per line: either the formatter
+  writes them for a logged exception, or the code sets them as fields, never both.
+- Each app has a `LoggingConfigTest` that fails if the JSON, ECS or flat-fields setting is removed, or if dev and test stop
+  being plain text.
 - Temporal workflow code needs its own logger (`Workflow.getLogger`), because workflows are replayed. Comes later.
 
 ### Step 5: Clean Architecture packages and the architecture test
@@ -465,8 +471,8 @@ With `refused.json` (SRV `9.9.9`): `{"status":"REFUSED","refusalReason":"SRV 9.9
 Audit event (ECS JSON, shortened):
 ```
 {"log.logger":"edt.audit","log.level":"INFO","message":"Service Request signed",
- "mdc":{"event.action":"sign-service-request","event.outcome":"success","edt.request_id":"REQ-0001",
-        "edt.srv":"4.1.1","edt.user_role":"OTHER_USER","WorkflowId":"sign-probe-ok","ActivityType":"Sign",...}}
+ "event.action":"sign-service-request","event.outcome":"success","edt.request_id":"REQ-0001",
+ "edt.srv":"4.1.1","edt.user_role":"OTHER_USER","WorkflowId":"sign-probe-ok","ActivityType":"Sign",...}
 ```
 
 Key ideas:
