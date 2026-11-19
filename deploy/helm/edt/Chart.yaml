@@ -1,0 +1,6 @@
+apiVersion: v2
+name: edt
+description: The four EDT applications (Batch Ingest, Orchestrator, DUIS Signer, Response Listener) for a local test cluster.
+type: application
+version: 0.1.0
+appVersion: "local"

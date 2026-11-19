@@ -1,0 +1,61 @@
+# The DSP simulator: plays the DSP HTTPS Gateway, the DSP and the devices. Its behaviour depends on the last group of
+# the target device ID. It sends each delayed Response to the Response Listener in the "edt" namespace.
+#
+# It mounts the DSP's PRIVATE signing key from the Secret "{{ .Values.dspSimulator.keySecret }}". Only this pod mounts it.
+# The Secret is created by the install script (task 3.1); until it exists the pod waits in ContainerCreating.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dsp-simulator
+  labels:
+    app: dsp-simulator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dsp-simulator
+  template:
+    metadata:
+      labels:
+        app: dsp-simulator
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: dsp-simulator
+          image: {{ .Values.dspSimulator.image }}
+          imagePullPolicy: IfNotPresent   # the install script loads this image into the node (design decision 5)
+          env:
+            - name: EDT_RESPONSE_LISTENER_URL
+              value: {{ .Values.dspSimulator.responseListenerUrl | quote }}
+            - name: EDT_RESPONSE_DELAY_SECONDS
+              value: {{ .Values.dspSimulator.responseDelaySeconds | quote }}
+            - name: EDT_DSP_KEYSTORE
+              value: /dsp-keys/dsp-signing.p12
+            - name: EDT_DSP_KEYSTORE_PASSWORD
+              value: {{ .Values.dspSimulator.keystorePassword | quote }}
+          ports:
+            - containerPort: 8090   # Service Requests: POST /duis/service-requests
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8090
+            periodSeconds: 5
+            failureThreshold: 10
+          volumeMounts:
+            - name: dsp-keys
+              mountPath: /dsp-keys
+              readOnly: true
+      volumes:
+        - name: dsp-keys
+          secret:
+            secretName: {{ .Values.dspSimulator.keySecret }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dsp-simulator
+spec:
+  selector:
+    app: dsp-simulator
+  ports:
+    - port: 8090

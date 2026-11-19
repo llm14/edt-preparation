@@ -1,0 +1,42 @@
+# Floci: an open-source AWS emulator (MIT, no account). KMS holds the User Role keys and DCC's Manifest key;
+# S3 and SQS hold the Manifest bucket and the Manifest events queue.
+# Everything is in memory: a restart loses keys, Manifests and messages (see the chart README).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: floci
+  labels:
+    app: floci
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: floci
+  template:
+    metadata:
+      labels:
+        app: floci
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: floci
+          image: {{ .Values.floci.image }}
+          ports:
+            - containerPort: 4566   # AWS API endpoint
+          # The image has its own healthcheck script; Compose uses it too.
+          readinessProbe:
+            exec:
+              command: ["/usr/local/bin/healthcheck.sh"]
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: floci
+spec:
+  selector:
+    app: floci
+  ports:
+    - port: 4566

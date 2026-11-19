@@ -1,0 +1,189 @@
+# Temporal: the schema Job, the server, the namespace Job and the web UI.
+#
+# Start order is by retrying, not by hooks (design decision 7): the schema Job retries until PostgreSQL answers,
+# the server restarts until its schema exists, and the namespace Job retries until the server is healthy.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-scripts
+data:
+  setup-schema.sh: |
+{{ required "pass --set-file scripts.setupSchema=dcc-tools/temporal/scripts/setup-schema.sh" .Values.scripts.setupSchema | indent 4 }}
+  create-namespace.sh: |
+{{ required "pass --set-file scripts.createNamespace=dcc-tools/temporal/scripts/create-namespace.sh" .Values.scripts.createNamespace | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: temporal-dynamicconfig
+data:
+  development-sql.yaml: |
+{{ required "pass --set-file temporal.dynamicConfig=dcc-tools/temporal/dynamicconfig/development-sql.yaml" .Values.temporal.dynamicConfig | indent 4 }}
+---
+# One-shot: creates Temporal's databases and tables, then ends.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-schema
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: temporal-schema
+          image: {{ .Values.temporal.adminToolsImage }}
+          command: ["/bin/sh", "/scripts/setup-schema.sh"]
+          env:
+            - name: POSTGRES_SEEDS
+              value: postgresql
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.user | quote }}
+            - name: SQL_PASSWORD
+              value: {{ .Values.postgresql.password | quote }}
+            - name: DB_PORT
+              value: "5432"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: temporal-scripts
+---
+# The Temporal Server: stores workflow state and hands out tasks to workers.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal
+  labels:
+    app: temporal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal
+  template:
+    metadata:
+      labels:
+        app: temporal
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: temporal
+          image: {{ .Values.temporal.serverImage }}
+          env:
+            - name: DB
+              value: postgres12
+            - name: DB_PORT
+              value: "5432"
+            - name: POSTGRES_SEEDS
+              value: postgresql
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.user | quote }}
+            - name: POSTGRES_PWD
+              value: {{ .Values.postgresql.password | quote }}
+            - name: BIND_ON_IP
+              value: 0.0.0.0
+            # The address the server tells other Temporal services to reach it on: its own pod IP.
+            - name: TEMPORAL_BROADCAST_ADDRESS
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DYNAMIC_CONFIG_FILE_PATH
+              value: config/dynamicconfig/development-sql.yaml
+          ports:
+            - containerPort: 7233   # gRPC frontend: workers and clients connect here
+          readinessProbe:
+            tcpSocket:
+              port: 7233
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            - name: dynamicconfig
+              mountPath: /etc/temporal/config/dynamicconfig
+              readOnly: true
+      volumes:
+        - name: dynamicconfig
+          configMap:
+            name: temporal-dynamicconfig
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal
+spec:
+  selector:
+    app: temporal
+  ports:
+    - port: 7233
+---
+# One-shot: creates the "{{ .Values.temporal.edtNamespace }}" namespace, then ends. The script waits for the server itself.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: temporal-namespace
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: temporal-namespace
+          image: {{ .Values.temporal.adminToolsImage }}
+          command: ["/bin/sh", "/scripts/create-namespace.sh"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: temporal-scripts
+---
+# Web UI to see namespaces, workflows and their histories. Service port 8088 (as on the host in Compose).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: temporal-ui
+  labels:
+    app: temporal-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: temporal-ui
+  template:
+    metadata:
+      labels:
+        app: temporal-ui
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: temporal-ui
+          image: {{ .Values.temporal.uiImage }}
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: temporal:7233
+            - name: TEMPORAL_DEFAULT_NAMESPACE
+              value: {{ .Values.temporal.edtNamespace | quote }}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: temporal-ui
+spec:
+  selector:
+    app: temporal-ui
+  ports:
+    - port: 8088
+      targetPort: 8080

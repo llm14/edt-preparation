@@ -923,6 +923,65 @@ Partition:1  event-id:batch-.../row-1,event-type:DeviceResult  00-DB-12-34-56-78
 Seen once in that run: A3's 2-minute timer fired after 5 min 50 s (the history shows `startToFireTimeout: 120s`).
 Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine paused?), not the code. Watch for it.
 
+### Step 19: Run on a local cluster (Kubernetes and Helm)
+
+The same four applications and the same `dcc-tools`, on the Kubernetes that comes with Docker Desktop, installed with
+Helm. The OpenSpec change `local-kubernetes-helm` (in `openspec/changes/`) has the reasons and the decisions.
+Docker Compose stays as it is; use one or the other, because both want the ports 8081-8084, 8088 and 4566.
+
+**Prerequisites** (nothing needs an account):
+- Docker Desktop with **Kubernetes enabled** (Settings, Kubernetes). `kubectl config current-context` must say `docker-desktop`.
+- `kubectl` and `helm` on your `PATH`.
+- JDK 25 (the Gradle wrapper does the rest): the script builds the applications and runs `kms-setup` on your machine.
+- On Windows, run the script from Git Bash.
+
+```
+deploy/edt.sh up        # build, install, wait until the four apps are ready (about 3 minutes the first time)
+deploy/edt.sh forward   # Temporal UI :8088, Floci :4566, the apps' health on :8081-:8084; Ctrl+C stops
+deploy/edt.sh down      # remove everything the script created
+```
+
+| Command | What it does |
+|---|---|
+| `up` | Builds the apps (tests skipped) and the five images, loads them into the cluster node, installs the `dcc-tools` chart, creates the keys and Secrets, installs the `edt` chart, then waits up to 300 s (`EDT_UP_TIMEOUT`). If an app is not ready in time it names it, shows the pods and the last log lines, and exits with an error. |
+| `secrets` | Only the keys step: creates the KMS keys, the bucket and the queue in Floci, then the Secrets `edt-certificate-store` (namespace `edt`) and `dsp-signing-key` (namespace `dcc-tools`). Part of `up`. |
+| `forward` | Port-forwards to the same local ports as Compose. |
+| `down` | Uninstalls both charts and deletes the namespaces `edt` and `dcc-tools`. Nothing else in the cluster is touched. |
+
+Where things are: the apps in namespace `edt`, the emulated DCC side in `dcc-tools`.
+```
+kubectl -n edt get pods
+kubectl -n edt logs deploy/orchestrator -f
+kubectl -n dcc-tools get pods
+```
+All the files are in `deploy/`: `edt.sh`, `check-env-keys.sh`, and the charts `helm/edt` and `helm/dcc-tools` (each has a
+README with every value).
+
+**After a Floci restart.** Floci keeps everything in memory, so a restart loses the keys, the bucket and the queue, and
+the Secrets no longer match. Run `deploy/edt.sh up` again: it creates the keys and the Secrets again and restarts the
+apps and the simulator, which read them only at start. (`deploy/edt.sh secrets` alone replaces the Secrets but does not
+restart anything.)
+
+**What the cluster does when something is wrong** (checked with Temporal scaled to zero):
+- The apps stop being ready within about 30 seconds. Running pods are not killed: they are just not ready.
+- A pod that starts while Temporal is down: the Orchestrator and the DUIS Signer exit at once and the cluster restarts
+  them (`CrashLoopBackOff`); Batch Ingest and the Response Listener stay running and not ready.
+- When Temporal is back, everything becomes ready again without a command.
+
+Key ideas:
+- **Same images, same settings.** The environment of each app is the one in `docker-compose.yml`, with the short service
+  names replaced by full cluster names (`temporal.dcc-tools.svc.cluster.local`). `deploy/check-env-keys.sh` fails if the
+  two ever differ.
+- **Images are loaded into the node.** The cluster node does not see images built with Docker, so `up` imports each one
+  (`docker save | ctr images import`). A rebuilt image must be loaded again, which `up` does.
+- **Keys are made on your machine.** `kms-setup` runs on the host against Floci through a port-forward, writes to a
+  temporary folder, and only the Secrets stay. Nothing key-related is written to the repository.
+- **Start order by retrying.** There is no `depends_on`. Jobs and pods retry until what they need is there, so you see a
+  few restarts at the start. That is normal.
+- **Only two namespaces.** `edt` for what we build, `dcc-tools` for what DCC provides in production.
+- **Not the production shape.** One pod per app, no autoscaling, no NetworkPolicy: `deploy/helm/edt/README.md` lists each
+  difference from the architecture model.
+
 ## Service interactions
 
 From the architecture model. Implemented so far: `batch-ingest` (SQS, S3, KMS Verify, starts the Batch), `orchestrator` to `duis-signer` (Sign activity, signing in KMS), `orchestrator` to the DSP (simulator),

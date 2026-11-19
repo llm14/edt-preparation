@@ -1,0 +1,103 @@
+{{- /*
+  One ConfigMap, one Deployment and one Service per entry under .Values.apps.
+  The four apps differ only in their values (port, environment, whether they mount the certificate store).
+*/ -}}
+{{- range $name, $app := .Values.apps }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+data:
+{{- range $key, $value := $app.env }}
+  {{ $key }}: {{ $value | quote }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  replicas: 1   # a local test setup; the model has at least two (see README)
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+      annotations:
+        # A changed environment changes this, so "helm upgrade" restarts the pod. Apps read their config at start.
+        checksum/config: {{ toYaml $app.env | sha256sum }}
+    spec:
+      # Kubernetes would inject variables for every Service in the namespace (for example RESPONSE_LISTENER_PORT).
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true   # the images run as user 1001
+      containers:
+        - name: {{ $name }}
+          image: {{ $.Values.image.repository }}/{{ $name }}:{{ $.Values.image.tag }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          envFrom:
+            - configMapRef:
+                name: {{ $name }}
+          ports:
+            - name: http
+              containerPort: {{ $app.port }}
+          # Slow start is not a failure: the startup probe gives the app time, using the liveness endpoint, which
+          # answers as soon as the process is up. Readiness (Temporal reachable and so on) is checked separately.
+          startupProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- if $app.certificateStore }}
+          volumeMounts:
+            - name: certificate-store
+              mountPath: {{ $.Values.certificateStore.mountPath }}
+              readOnly: true
+          {{- end }}
+      {{- if $app.certificateStore }}
+      volumes:
+        - name: certificate-store
+          secret:
+            secretName: {{ $.Values.certificateStore.secretName }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+spec:
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $app.port }}
+      targetPort: http
+{{- end }}

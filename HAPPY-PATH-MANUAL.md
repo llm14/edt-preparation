@@ -28,6 +28,57 @@ Workflow code (classes ending in `WorkflowImpl`) is REPLAYED: the same breakpoin
 To stop only on the first, real execution, add this condition to the breakpoint (unverified): `!io.temporal.workflow.Workflow.isReplaying()`.
 Activity code (`*ActivityImpl`) runs once per attempt.
 
+### Cluster note: the same path on the local cluster
+
+The same one-device Manifest, run on the local Kubernetes cluster (`deploy/edt.sh up`, README Step 19) instead of
+Compose and IntelliJ. Checked on 2026-11-19 (the OpenSpec change `local-kubernetes-helm`).
+
+**The result is the same as with Compose**, with these observed values:
+
+| What | Observed on the cluster |
+|---|---|
+| Batch Ingest | "Manifest received" and "Batch started" in the same second as the upload |
+| Workflows (Temporal UI, namespace `edt`) | `Batch`, `Page`, `Flow` and `ServiceRequest`, all `COMPLETED` |
+| Service Request history | `TimerStarted` (the 2-minute wait), then `WorkflowExecutionSignaled` 5 s later (the simulator's delay), then `TimerCanceled`: the timeout never fires |
+| Response Listener | "DSP message delivered to its Service Request workflow", about 50 ms before "Service Request ... ended: RESPONDED" |
+| Simulator | `behaviour=RESPOND`, `delivered ... attempt=1` (first try) |
+| Kafka | 1 `FlowStep` (`status` RESPONDED, fact `InstantaneousImportRegister`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
+| Time | Batch started 15:06:22, ended 15:06:29: about 7 s from upload to the last event |
+
+**What is different from this manual**
+
+| Manual says (Compose and IntelliJ) | On the cluster |
+|---|---|
+| Step 0 checks: `docker compose ps`, `docker inspect ...`, apps in IntelliJ | `kubectl -n edt get pods` and `kubectl -n dcc-tools get pods` all ready; no IntelliJ |
+| The simulator delivers to `host.docker.internal:8084` (your machine) | It delivers to `response-listener.edt.svc.cluster.local:8084` (value `dspSimulator.responseListenerUrl` in `deploy/helm/dcc-tools/values.yaml`) |
+| Breakpoints and debug ports 5005 to 5008 | **Not available.** The images start `java -jar quarkus-run.jar` and open no debug port. Follow the path with the logs and the Temporal UI, or use the Compose and IntelliJ set-up for breakpoints |
+| Upload: `docker compose run --rm manifest-upload ...` | Run the same tool from your machine through a port-forward (below) |
+| Read Kafka: `docker run --network edt ... kafka:9092` | A throw-away pod in the `dcc-tools` namespace (below) |
+| Logs in the IDE console | `kubectl -n edt logs deploy/<app>` (ECS JSON). While a rollout is running `deploy/<app>` can pick the old pod, so name the pod |
+| Ports on `localhost` | Only after `deploy/edt.sh forward` (same ports as Compose) |
+
+Upload from your machine (Git Bash, from the repository root; `manifest-upload` is built by `deploy/edt.sh up`):
+```bash
+export MSYS_NO_PATHCONV=1
+kubectl -n dcc-tools port-forward svc/floci 14566:4566 &        # stop it afterwards with: kill %1
+EDT_AWS_ENDPOINT=http://localhost:14566 AWS_REGION=eu-west-2 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
+EDT_MANIFEST_BUCKET=edt-manifests EDT_MANIFEST_QUEUE=edt-manifest-events EDT_MANIFEST_KEY=alias/dcc-manifest \
+  dcc-tools/manifest-upload/build/install/manifest-upload/bin/manifest-upload "$(cygpath -m "$PWD/samples/manifests/one-device.csv")"
+```
+
+Read a Kafka topic (`edt.flow-steps`, `edt.device-results` or `edt.batch-results`):
+```bash
+MSYS_NO_PATHCONV=1 kubectl -n dcc-tools run read-topic --image=apache/kafka:4.1.0 --restart=Never --command -- \
+  /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic edt.batch-results --from-beginning --timeout-ms 8000 \
+  --property print.partition=true --property print.key=true --property print.headers=true
+kubectl -n dcc-tools logs read-topic ; kubectl -n dcc-tools delete pod read-topic
+```
+The `TimeoutException` at the end of the output is the consumer stopping after `--timeout-ms`, not a failure.
+
+Seen once at start-up, not a happy-path difference: the Orchestrator and the DUIS Signer restart two or three times
+while Temporal and Floci come up (they exit when they cannot reach Temporal and the cluster restarts them). After that
+they stay up.
+
 ## 1. The map: model arrow, breakpoint, what to look at
 
 Order is the order in which the breakpoints are hit. App = the IntelliJ run/attach configuration.

@@ -1,0 +1,114 @@
+# Kafka: one broker in KRaft mode (Kafka keeps its own metadata; no ZooKeeper).
+#
+# [CONFIRM] Plain text, no authentication, and the topic names and settings are PLACEHOLDERS: in production DCC
+# runs the cluster and owns its topics, with mutual TLS (to be confirmed with DCC). In memory: no volume.
+#
+# A listener is an address the broker listens on; "advertised" is the address it tells clients to use.
+#   INTERNAL   the full service name :9092   the EDT pods (any namespace) and the tools
+#   EXTERNAL   localhost:29092               a client on your machine, through a port-forward to 29092
+#   CONTROLLER :9093                         KRaft: the broker talking to its own controller
+#
+# The INTERNAL address is the FULL service name on purpose (design decision 9). Kafka clients reconnect to the address
+# the broker advertises, and the short name "kafka" does not resolve from the "edt" namespace.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-scripts
+data:
+  create-topics.sh: |
+{{ required "pass --set-file scripts.createTopics=dcc-tools/kafka/create-topics.sh" .Values.scripts.createTopics | indent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka
+  labels:
+    app: kafka
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka
+  template:
+    metadata:
+      labels:
+        app: kafka
+    spec:
+      # Without this, Kubernetes injects KAFKA_PORT=tcp://... for the Service named "kafka",
+      # which collides with the KAFKA_* settings this image reads (design decision 10).
+      enableServiceLinks: false
+      containers:
+        - name: kafka
+          image: {{ .Values.kafka.image }}
+          env:
+            - name: KAFKA_NODE_ID
+              value: "1"
+            - name: KAFKA_PROCESS_ROLES
+              value: broker,controller   # one node plays both roles
+            - name: KAFKA_CONTROLLER_QUORUM_VOTERS
+              value: 1@localhost:9093
+            - name: KAFKA_CONTROLLER_LISTENER_NAMES
+              value: CONTROLLER
+            - name: KAFKA_LISTENERS
+              value: INTERNAL://:9092,EXTERNAL://:29092,CONTROLLER://:9093
+            - name: KAFKA_ADVERTISED_LISTENERS
+              value: INTERNAL://kafka.{{ .Release.Namespace }}.svc.{{ .Values.kafka.clusterDomain }}:9092,EXTERNAL://localhost:29092
+            - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
+              value: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+            - name: KAFKA_INTER_BROKER_LISTENER_NAME
+              value: INTERNAL
+            - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
+              value: "false"   # topics only from the topics Job: their config is explicit
+            # Kafka's own internal topics: one copy each, as there is one broker.
+            - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR
+              value: "1"
+            - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
+              value: "1"
+          ports:
+            - containerPort: 9092
+            - containerPort: 29092
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            periodSeconds: 5
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+spec:
+  selector:
+    app: kafka
+  ports:
+    - name: internal
+      port: 9092
+    - name: external
+      port: 29092
+---
+# One-shot: creates the EDT topics (create-topics.sh), then ends. The script does not wait for the broker, so the Job
+# retries until it answers. --if-not-exists inside the script makes a retry safe.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topics
+          image: {{ .Values.kafka.image }}
+          command: ["/bin/sh", "/scripts/create-topics.sh"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: kafka-scripts

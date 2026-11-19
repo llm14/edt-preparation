@@ -1,0 +1,47 @@
+# Values for the emulated DCC side. Everything here is for a LOCAL TEST cluster only.
+# Install with deploy/edt.sh, which also passes the four files that live outside this chart:
+#   --set-file scripts.setupSchema=dcc-tools/temporal/scripts/setup-schema.sh
+#   --set-file scripts.createNamespace=dcc-tools/temporal/scripts/create-namespace.sh
+#   --set-file scripts.createTopics=dcc-tools/kafka/create-topics.sh
+#   --set-file temporal.dynamicConfig=dcc-tools/temporal/dynamicconfig/development-sql.yaml
+# (Helm cannot read files outside the chart folder, and a copy here would drift.)
+
+# Set by --set-file; the templates stop with a message if one is missing.
+scripts:
+  setupSchema: ""
+  createNamespace: ""
+  createTopics: ""   # --set-file scripts.createTopics=dcc-tools/kafka/create-topics.sh
+
+postgresql:
+  image: postgres:16
+  # Test credentials, the same as in dcc-tools/docker-compose.yml.
+  user: temporal
+  password: temporal
+
+floci:
+  # Open source (MIT), no account. In memory only.
+  image: floci/floci:2.4.0
+
+kafka:
+  image: apache/kafka:4.1.0
+  # [CONFIRM] Plain text and placeholder topics: DCC owns the real cluster, its authentication and its topics.
+  # The cluster DNS suffix, used to build the broker's advertised address (kafka.<namespace>.svc.<clusterDomain>).
+  clusterDomain: cluster.local
+
+dspSimulator:
+  image: edt/dsp-simulator:local   # built by dcc-tools, loaded into the node by the install script
+  # Where the delayed Responses go: the Response Listener's full service name (it is in another namespace).
+  responseListenerUrl: http://response-listener.edt.svc.cluster.local:8084/duis/responses
+  responseDelaySeconds: 5
+  # The DSP's private signing key lives in this Secret (key "dsp-signing.p12"), created by the install script.
+  keySecret: dsp-signing-key
+  keystorePassword: edt-test-only   # test only, as in Compose
+
+temporal:
+  serverImage: temporalio/server:1.32.2
+  adminToolsImage: temporalio/admin-tools:1.32.2
+  uiImage: temporalio/ui:2.58.1
+  # The namespace the EDT's workflows live in (created by the temporal-namespace Job).
+  edtNamespace: edt
+  # Set by --set-file.
+  dynamicConfig: ""
