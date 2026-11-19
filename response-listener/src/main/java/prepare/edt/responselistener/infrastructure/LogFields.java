@@ -13,7 +13,7 @@ import org.jboss.logging.MDC;
  * }
  * </pre>
  *
- * The fields go into the MDC (Mapped Diagnostic Context), which the JSON log writes as "mdc": {...}.
+ * The fields go into the MDC (Mapped Diagnostic Context), which the JSON log writes as top-level fields (quarkus.log.console.json.mdc.flat-fields=true).
  */
 public final class LogFields implements AutoCloseable {
 

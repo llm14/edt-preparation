@@ -4,6 +4,7 @@ import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
 import java.util.Map;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.entity.RequestId;
 
 /**
@@ -45,7 +46,10 @@ public class PlaceholderFlowWorkflowImpl implements FlowWorkflow {
             case ServiceRequestOutcome.TIMED_OUT, ServiceRequestOutcome.FAILED_ALERT -> NO_RESPONSE;
             default -> NOT_DIAGNOSED;
         };
-        LOG.info("Flow for row {} ({}): {} -> Verdict {}", input.rowNumber(), input.deviceId(), outcome.status(), verdict);
+        try (var fields = LogFields.of("event.action", "flow-ended", "edt.manifest.row", input.rowNumber(),
+                "edt.device_id", input.deviceId(), "edt.status", outcome.status(), "edt.verdict", verdict)) {
+            LOG.info("Flow ended");
+        }
 
         // Kafka (model 010.020, steps 4 and 5): the step, then the device Flow result. Event IDs from the workflow ID.
         String flowId = Workflow.getInfo().getWorkflowId();

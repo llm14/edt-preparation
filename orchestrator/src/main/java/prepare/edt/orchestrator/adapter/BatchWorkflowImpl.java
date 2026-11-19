@@ -5,6 +5,7 @@ import io.temporal.workflow.Async;
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.adapter.PageWorkflow.PageInput;
 
 /**
@@ -67,13 +68,19 @@ public class BatchWorkflowImpl implements BatchWorkflow {
             throw ApplicationFailure.newNonRetryableFailure(failure, "BatchFailed");
         }
         if (!endReached) {
-            LOG.info("Batch {} continues as new at Page {}", batchId, progress.nextPage());
+            try (var fields = LogFields.of("event.action", "batch-continued-as-new", "edt.batch_id", batchId,
+                    "edt.page", progress.nextPage())) {
+                LOG.info("Batch continues as new");
+            }
             Workflow.continueAsNew(new BatchInput(input.bucket(), input.key(), input.versionId(), progress));
         }
         BatchResult result = new BatchResult(batchId, progress.nextPage(), progress.devices(), progress.invalidRows(),
                 progress.verdicts());
-        LOG.info("Batch {} ended: {} devices, {} invalid rows, Verdicts {}", batchId, result.devices(),
-                result.invalidRows(), result.verdicts());
+        try (var fields = LogFields.of("event.action", "batch-ended", "edt.batch_id", batchId,
+                "edt.devices", result.devices(), "edt.manifest.invalid_rows", result.invalidRows(),
+                "edt.verdicts", result.verdicts())) {
+            LOG.info("Batch ended");
+        }
         // Kafka (model 010.010, step 12): the Batch result. Its event ID is the Batch ID.
         ResultPublisherActivity.stub().publishBatchResult(new ResultPublisherActivity.BatchResult(batchId,
                 ResultPublisherActivity.now(), batchId, result.pages(), result.devices(), result.invalidRows(),
