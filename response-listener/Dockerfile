@@ -16,4 +16,6 @@ EXPOSE 8084
 # Run as a non-root user.
 USER 1001
 
-ENTRYPOINT ["java", "-jar", "quarkus-run.jar"]
+# --enable-native-access: Java 25 prints a warning (not JSON) when the gRPC Netty library loads its native code; the log
+# agent reads every line as JSON, so the flag is set. See openspec/specs/structured-logging.
+ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "quarkus-run.jar"]

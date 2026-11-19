@@ -23,6 +23,8 @@ reading the real lines from the running cluster shows three gaps:
   app's configuration really turns the setting on.
 - Keep `error.message` and `error.type` single-sourced: either the formatter writes them for a logged exception, or the code
   sets them as fields, never both on the same line.
+- Remove the JVM's start-up warning lines (Java 25 native-access) from the container output, so that every line is JSON:
+  one flag in the `ENTRYPOINT` of each Dockerfile.
 - Update README Step 4 and the one line in `HAPPY-PATH-MANUAL.md` that quotes a workflow message.
 - **BREAKING for anything that reads the logs by field path:** a query or alert on `mdc.event.action` will no longer match;
   the field is `event.action`. Nothing in this repository does that today, but DCC's side must be checked (open question).
@@ -41,7 +43,7 @@ None. The only main spec is `local-cluster`, which is not about logging.
 
 ## Impact
 
-- Code: `application.properties` of the four apps (one line each) and the workflow classes in the Orchestrator
+- Code: `application.properties` and `Dockerfile` of the four apps (one line each) and the workflow classes in the Orchestrator
   (`BatchWorkflowImpl`, `PageWorkflowImpl`, `PlaceholderFlowWorkflowImpl`, `ServiceRequestWorkflowImpl`,
   `SignProbeWorkflowImpl`). The workflow lines are the only places where message texts change.
 - Tests: a plain JUnit configuration test in each app (no `@QuarkusTest`), workflow tests in the Orchestrator, and a script

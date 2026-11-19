@@ -13,8 +13,10 @@
 
 ## 3. A check of the real log shape
 
-- [ ] 3.1 Write `deploy/check-log-shape.sh`: it reads `kubectl logs` of the four apps and fails if a JSON line does not parse, lacks `@timestamp`, `log.level`, `message`, `service.name` or `ecs.version`, has an `mdc` object, or repeats a key (found while parsing); it prints the app and the first offending line. Run it against the cluster as it is now (old nested shape). Verify: it exits non-zero and reports `mdc` for the apps that have logged fields.
-- [ ] 3.2 Document the script in README Step 4 (what it checks, that it needs the cluster running, and that it is the check to run after any change to logging). Verify: the documented command runs as written.
+- [x] 3.1 Write `deploy/check-log-shape.sh`: it reads `kubectl logs` of the four apps and fails if a JSON line does not parse, lacks `@timestamp`, `log.level`, `message`, `service.name` or `ecs.version`, has an `mdc` object, or repeats a key (found while parsing); it prints the app and the first offending line. Run it against the cluster as it is now (old nested shape). Verify: it exits non-zero and reports `mdc` for the apps that have logged fields.
+- [x] 3.2 Document the script in README Step 4 (what it checks, that it needs the cluster running, and that it is the check to run after any change to logging). Verify: the documented command runs as written.
+
+- [ ] 3.3 Add `--enable-native-access=ALL-UNNAMED` to the `ENTRYPOINT` of the four Dockerfiles (design decision 6) and mention it in the README's Dockerfile row. Verify: after `deploy/edt.sh up` (group 5), the first line of each app's log is JSON and `deploy/check-log-shape.sh` reports no "not JSON" lines.
 
 ## 4. Workflow lines carry their data as fields (scope B)
 

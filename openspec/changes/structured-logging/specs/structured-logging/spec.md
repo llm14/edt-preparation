@@ -14,6 +14,10 @@ In the packaged profile each of the four containers SHALL write every log line t
 - **THEN** the line parses as one JSON object
 - **AND** the object has `@timestamp`, `log.level`, `message`, `service.name` and `ecs.version`
 
+#### Scenario: Nothing but JSON at start-up
+- **WHEN** a container starts in the packaged profile
+- **THEN** every line it writes to standard output, from the first one, is a JSON object, including lines written by the JVM before the application's logging starts
+
 #### Scenario: Development run
 - **WHEN** an application runs in the development or test profile
 - **THEN** its log lines are plain text, not JSON

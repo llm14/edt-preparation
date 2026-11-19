@@ -107,12 +107,21 @@ Field names follow the ones already in use (`edt.request_id`, `edt.manifest.row`
 a unit test that builds the JSON formatter by hand (it would have to copy Quarkus's own ECS wiring, so it could pass while the
 real app differs).
 
-### 6. `error.message` and `error.type` have one source per line
+### 6. The JVM's native-access warning is switched off in the images
+`check-log-shape.sh` found 4 non-JSON lines in every app at start-up: Java 25 warns that `System::loadLibrary` was called by
+the gRPC Netty library (`WARNING: A restricted method in java.lang.System has been called ...`). The JVM prints them before
+Quarkus logging starts, so no logging setting can turn them into JSON, and the log agent would read them as unparsable lines.
+The four Dockerfiles run `java --enable-native-access=ALL-UNNAMED -jar quarkus-run.jar`; this is the flag the warning itself
+names. *Why not hide it in the check:* the check would pass while the log agent still receives the lines. *Rejected:* relaxing
+the "every line is JSON" requirement. *Effect:* native access is allowed for all unnamed-module code, which is what Java 24 and
+earlier did without a warning (the libraries are the same as before).
+
+### 7. `error.message` and `error.type` have one source per line
 The rule: a line sets them as fields **or** logs an exception, never both. Today no line does both, and the log-shape
 check on the real logs (decision 5) would catch a line that does. *Rejected:* making `LogFields` refuse the key (it cannot know whether the call also passes an
 exception).
 
-### 7. Documentation
+### 8. Documentation
 README Step 4 shows the nested `mdc` in two examples and says custom fields appear under `mdc`; update them and add the
 rules (fields top-level, one key once, `error.*` single-sourced). `HAPPY-PATH-MANUAL.md` line 43 quotes
 `Service Request ... ended: RESPONDED`; update it to the new message plus its fields.
@@ -129,7 +138,7 @@ rules (fields top-level, one key once, `error.*` single-sourced). `HAPPY-PATH-MA
   30 concurrent workflows, across a yield, or into later workflows, and no workflow line written during replay, so scope B
   stays. It did not test a block that contains a blocking call, which is why the rule remains.
 - **Values are strings** (counts included) → fine for `edt.*` fields; if DCC maps a field as a number it would need a decision.
-- **Changed message text** for 8 workflow lines → no test asserts them and one document quotes one (updated in 7).
+- **Changed message text** for 8 workflow lines → no test asserts them and one document quotes one (updated in 8).
 
 ## Migration Plan
 

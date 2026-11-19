@@ -100,6 +100,18 @@ Key ideas:
   writes them for a logged exception, or the code sets them as fields, never both.
 - Each app has a `LoggingConfigTest` that fails if the JSON, ECS or flat-fields setting is removed, or if dev and test stop
   being plain text.
+
+Check the real logs on the cluster (needs `deploy/edt.sh up` first):
+
+```bash
+deploy/check-log-shape.sh
+```
+
+It reads the logs of the four apps and fails (exit 1) if a line is not one JSON object, lacks `@timestamp`, `log.level`,
+`message`, `service.name` or `ecs.version`, has an `mdc` object, or repeats a key. For each app it prints how many lines it read
+and, for each kind of problem, how many lines have it and the first one. `EDT_LOG_TAIL` sets how many lines are read per app
+(default 2000), `EDT_NAMESPACE` the namespace (default `edt`). Run it after any change to logging: the unit tests check the
+settings, this checks what the packaged apps really write.
 - Temporal workflow code needs its own logger (`Workflow.getLogger`), because workflows are replayed. Comes later.
 
 ### Step 5: Clean Architecture packages and the architecture test
@@ -159,7 +171,7 @@ docker compose down
 
 | File | What it does |
 |---|---|
-| `<app>/Dockerfile` | Java 25 runtime (`eclipse-temurin:25-jre`) plus `build/quarkus-app`. Runs as user 1001, not root. |
+| `<app>/Dockerfile` | Java 25 runtime (`eclipse-temurin:25-jre`) plus `build/quarkus-app`. Runs as user 1001, not root, with `--enable-native-access=ALL-UNNAMED` so the JVM prints no non-JSON warning. |
 | `<app>/.dockerignore` | Sends only `build/quarkus-app/` to Docker. |
 | `docker-compose.yml` | The four services, ports 8081-8084, healthchecks, network `edt`. |
 
