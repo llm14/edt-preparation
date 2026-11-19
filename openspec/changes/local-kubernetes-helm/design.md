@@ -53,11 +53,21 @@ Because the apps and the DCC side are in different namespaces, addresses in valu
 *Why:* already enabled, no sign-up, no install. *Rejected:* `kind` or `k3d` (open source and fine, but one more tool to
 install for no benefit here).
 
-### 5. Images: the Compose tags, built with the existing build
+### 5. Images: the Compose tags, built with the existing build, then loaded into the node
 The script runs `./gradlew build` and `docker compose build` (and the dcc-tools equivalents), which produce
-`edt/<app>:local`. Charts use `imagePullPolicy: IfNotPresent` and no registry.
-*Why:* no second build path to keep in sync. *Rejected:* a local registry (more machinery, only needed if the node cannot
-see local images, see the spike in tasks.md).
+`edt/<app>:local`, then loads each image into the cluster node:
+`docker save <image> | docker exec -i desktop-control-plane ctr -n k8s.io images import -`.
+Charts use `imagePullPolicy: IfNotPresent` and no registry.
+*Why:* no second build path to keep in sync, and no registry to run.
+*Rejected:* a local registry (more machinery; the load step is enough).
+
+**Spike result (task 1.1, 2026-11-19):** the node does **not** see images built with Docker. Even though Docker Desktop
+uses the containerd image store, a pod with `imagePullPolicy: Never` for `edt/orchestrator:local` failed with
+`ErrImageNeverPull`. After importing the image into the node with `ctr` (about 12 seconds for the orchestrator image;
+the node reports it as `docker.io/edt/orchestrator:local`), the same pod started the application, which then exited
+because its certificate store file was missing, as expected with no Secret mounted. The node is a Docker container
+named `desktop-control-plane`; `ctr` is available inside it. The imported image stays in the node until the cluster is
+reset, so a rebuilt image must be loaded again.
 
 ### 6. Secrets: kms-setup runs on the host through a port-forward
 The script forwards Floci's port 4566, runs the existing `kms-setup` build on the host against it (it also creates the
@@ -116,8 +126,9 @@ on Docker Desktop but make the setup depend on that product).
 
 - **Floci loses everything on restart** (KMS keys, bucket, queue) and the Secrets then no longer match its keys →
   document "re-run the install's secrets step, or reinstall"; no automation in this change.
-- **Local images may not be visible to the cluster node** → spike first (tasks.md); the fallback changes the script, not
-  the charts.
+- **Local images are not visible to the cluster node** (confirmed by the spike) → the script loads each image into the
+  node. This depends on the node container being named `desktop-control-plane` and having `ctr`; the script checks both
+  and stops with a clear message if not (for example after Docker Desktop changes how it provisions the cluster).
 - **Host-side kms-setup needs the JDK and a free port 4566** → documented prerequisite; the script checks the port.
 - **Docker Desktop Kubernetes can be switched off or reset** → the script checks the `docker-desktop` context and refuses
   to run against any other context, so it cannot touch a real cluster by mistake.

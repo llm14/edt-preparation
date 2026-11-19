@@ -2,8 +2,8 @@
 
 ## 1. Spike and guard rails
 
-- [ ] 1.1 Spike: build one image (`docker compose build orchestrator`), start a throw-away pod with `imagePullPolicy: Never` on the `docker-desktop` cluster, and record in design.md whether the node sees the local image. Verify: the pod reaches `Running`, or the failure and chosen fallback (load into node, or local registry) are written down.
-- [ ] 1.2 Create `deploy/` with a script `deploy/edt.sh` skeleton that stops unless `kubectl config current-context` is `docker-desktop`. Verify: running it with another context selected (`kubectl config use-context` to a dummy) exits non-zero and changes nothing.
+- [x] 1.1 Spike: build one image (`docker compose build orchestrator`), start a throw-away pod with `imagePullPolicy: Never` on the `docker-desktop` cluster, and record in design.md whether the node sees the local image. Verify: the pod reaches `Running`, or the failure and chosen fallback (load into node, or local registry) are written down.
+- [x] 1.2 Create `deploy/` with a script `deploy/edt.sh` skeleton that stops unless `kubectl config current-context` is `docker-desktop`. Verify: running it with another context selected (`kubectl config use-context` to a dummy) exits non-zero and changes nothing.
 
 ## 2. Emulated DCC side chart (`deploy/helm/dcc-tools`)
 
@@ -26,7 +26,7 @@
 
 ## 5. Install, remove and failure behaviour
 
-- [ ] 5.1 Complete `deploy/edt.sh` with `up` (build images, install the DCC chart, secrets step, install the EDT chart, wait for ready), `down` (remove both releases and namespaces) and `forward`. Verify: on a cluster with no EDT objects, `up` ends successfully with all four apps ready and `down` leaves neither namespace.
+- [ ] 5.1 Complete `deploy/edt.sh` with `up` (build images, load them into the node as in design decision 5, install the DCC chart, secrets step, install the EDT chart, wait for ready), `down` (remove both releases and namespaces) and `forward`. Verify: on a cluster with no EDT objects, `up` ends successfully with all four apps ready and `down` leaves neither namespace.
 - [ ] 5.2 Verify the failure scenarios of the spec: scale Temporal to zero and check that the apps are not ready and are restarted; make one app unready and check that `up` names it and fails within its time limit.
 - [ ] 5.3 Add a README section "Run on a local cluster" (prerequisites, `up`, `down`, `forward`, what to do after a Floci restart). Verify: following it on a clean checkout needs no step that is not written there.
 
