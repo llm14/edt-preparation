@@ -243,7 +243,7 @@ class ServiceRequestWorkflowTest {
                         .setTaskQueue(ORCHESTRATOR_QUEUE)
                         .setWorkflowId(RequestId.workflowId(INPUT.requestId()))
                         .build());
-        WorkflowClient.start(workflow::run, INPUT);
+        WorkflowClient.start(workflow::executeServiceRequest, INPUT);
         return workflow;
     }
 

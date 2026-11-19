@@ -31,7 +31,7 @@ public class SignProbeWorkflowImpl implements SignProbeWorkflow {
     }
 
     @Override
-    public SignOutcome run(String unsignedServiceRequest) {
+    public SignOutcome probeSigning(String unsignedServiceRequest) {
         LOG.info("Asking the DUIS Signer to sign");
         SignOutcome outcome = signer.sign(unsignedServiceRequest);
         LOG.info("Sign outcome: {} {}", outcome.status(),

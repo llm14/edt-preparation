@@ -8,7 +8,7 @@ import io.temporal.workflow.WorkflowMethod;
 public interface FlowWorkflow {
 
     @WorkflowMethod(name = "Flow")
-    String run(FlowInput input);
+    String diagnoseDevice(FlowInput input);
 
     record FlowInput(String batchId, long rowNumber, String deviceId, String deviceType, String flow) {
     }

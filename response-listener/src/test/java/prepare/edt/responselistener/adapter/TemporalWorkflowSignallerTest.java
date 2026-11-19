@@ -32,7 +32,7 @@ class TemporalWorkflowSignallerTest {
     @WorkflowInterface
     public interface StandInServiceRequest {
         @WorkflowMethod(name = "ServiceRequest")
-        String run();
+        String executeServiceRequest();
 
         @SignalMethod(name = "DspMessage")
         void onDspMessage(OrchestratorDspMessage message);
@@ -43,7 +43,7 @@ class TemporalWorkflowSignallerTest {
         private OrchestratorDspMessage received;
 
         @Override
-        public String run() {
+        public String executeServiceRequest() {
             Workflow.await(() -> received != null);
             return received.type() + "/" + received.alertCode() + "/" + received.xml();
         }
@@ -102,7 +102,7 @@ class TemporalWorkflowSignallerTest {
     StandInServiceRequest startWorkflow(String workflowId) {
         StandInServiceRequest workflow = client.newWorkflowStub(StandInServiceRequest.class,
                 WorkflowOptions.newBuilder().setWorkflowId(workflowId).setTaskQueue(QUEUE).build());
-        WorkflowClient.start(workflow::run);
+        WorkflowClient.start(workflow::executeServiceRequest);
         return workflow;
     }
 

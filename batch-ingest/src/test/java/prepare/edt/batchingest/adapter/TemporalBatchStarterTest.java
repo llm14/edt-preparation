@@ -21,12 +21,12 @@ class TemporalBatchStarterTest {
     @WorkflowInterface
     public interface StandInBatch {
         @WorkflowMethod(name = "Batch")
-        String run(BatchInput input);
+        String processManifest(BatchInput input);
     }
 
     public static class StandInBatchImpl implements StandInBatch {
         @Override
-        public String run(BatchInput input) {
+        public String processManifest(BatchInput input) {
             if (input.key().startsWith("long")) {
                 Workflow.sleep(Duration.ofDays(1));
             }

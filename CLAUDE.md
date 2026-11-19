@@ -98,6 +98,7 @@ firmware version and coverage availability. **[CONFIRM against DCC's final Flows
 2. **Retries.** The model says the send activity does not retry, the gateway retries transient errors, and a Service Request that failed or timed out is never sent again. In the call, the lead described application-level retries through Temporal that recreate the whole Service Request including its counter. Which is current?
 3. **Kafka.** The model publishes step events as well as device and Batch results. The call mentioned device level and probably file level.
 4. Manifest signature format on the S3 object (for example an object tag) is "to be agreed with DCC". Kafka authentication by mutual TLS is assumed, to be confirmed with DCC.
+   Also open: the **Manifest file format itself** (file type, header, columns). The model only says "signed Manifest (bulk file)" with rows read by S3 byte range and invalid rows counted and logged. The repo's CSV with the header `device_id,device_type,flow` is our assumption, not confirmed (affects `ManifestRow`, `ReadManifestPage`, `samples/manifests/` and the `manifest-upload` tool, not Batch Ingest).
 5. The call said the signing provider might need a vendor library installed (HSM case). The model describes KMS API calls instead. Related to point 1.
 
 Resolved in the model, but worth confirming with the lead: response correlation uses a workflow ID derived from the DUIS Request ID, so the Response Listener needs no table of its own.

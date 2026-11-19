@@ -10,7 +10,7 @@ import java.util.TreeMap;
 public interface PageWorkflow {
 
     @WorkflowMethod(name = "Page")
-    PageResult run(PageInput input);
+    PageResult processPage(PageInput input);
 
     /**
      * @param page           Page number (0 is the first)

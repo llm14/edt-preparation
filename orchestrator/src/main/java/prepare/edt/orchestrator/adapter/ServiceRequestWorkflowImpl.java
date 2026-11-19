@@ -77,7 +77,7 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
     }
 
     @Override
-    public ServiceRequestOutcome run(ServiceRequestInput input) {
+    public ServiceRequestOutcome executeServiceRequest(ServiceRequestInput input) {
         String requestId = input.requestId();
 
         String unsigned = builder.build(input);

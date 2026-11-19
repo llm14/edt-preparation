@@ -30,14 +30,14 @@ public class PlaceholderFlowWorkflowImpl implements FlowWorkflow {
     private final ResultPublisherActivity publisher = ResultPublisherActivity.stub();
 
     @Override
-    public String run(FlowInput input) {
+    public String diagnoseDevice(FlowInput input) {
         String srv = "CHF".equals(input.deviceType()) ? "8.2" : "4.1.1";
         // Workflow.currentTimeMillis: deterministic on replay (the placeholder counter of the Request ID).
         RequestId requestId = RequestId.placeholder(ORIGINATOR, input.deviceId(), Workflow.currentTimeMillis());
 
         ServiceRequestWorkflow serviceRequest = Workflow.newChildWorkflowStub(ServiceRequestWorkflow.class,
                 ChildWorkflowOptions.newBuilder().setWorkflowId(requestId.workflowId()).build());
-        ServiceRequestOutcome outcome = serviceRequest.run(new ServiceRequestInput(requestId.value(), input.batchId(),
+        ServiceRequestOutcome outcome = serviceRequest.executeServiceRequest(new ServiceRequestInput(requestId.value(), input.batchId(),
                 ORIGINATOR, input.deviceId(), input.deviceType(), srv));
 
         String verdict = switch (outcome.status()) {

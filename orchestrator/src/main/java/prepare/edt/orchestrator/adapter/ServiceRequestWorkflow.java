@@ -14,7 +14,7 @@ import io.temporal.workflow.WorkflowMethod;
 public interface ServiceRequestWorkflow {
 
     @WorkflowMethod(name = "ServiceRequest")
-    ServiceRequestOutcome run(ServiceRequestInput input);
+    ServiceRequestOutcome executeServiceRequest(ServiceRequestInput input);
 
     /** Called (through Temporal) by the Response Listener with the Response or a DCC Alert. */
     @SignalMethod(name = "DspMessage")

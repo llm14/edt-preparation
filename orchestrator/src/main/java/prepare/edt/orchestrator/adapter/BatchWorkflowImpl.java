@@ -42,7 +42,7 @@ public class BatchWorkflowImpl implements BatchWorkflow {
     }
 
     @Override
-    public BatchResult run(BatchInput input) {
+    public BatchResult processManifest(BatchInput input) {
         String batchId = Workflow.getInfo().getWorkflowId();
         if (input.progress() != null) {
             progress = input.progress();
@@ -96,7 +96,7 @@ public class BatchWorkflowImpl implements BatchWorkflow {
         running++;
         changes++;
 
-        Async.function(child::run, pageInput).handle((result, error) -> {
+        Async.function(child::processPage, pageInput).handle((result, error) -> {
             running--;
             changes++;
             if (error != null) {
