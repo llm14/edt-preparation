@@ -70,8 +70,10 @@ named `desktop-control-plane`; `ctr` is available inside it. The imported image 
 reset, so a rebuilt image must be loaded again.
 
 ### 6. Secrets: kms-setup runs on the host through a port-forward
-The script forwards Floci's port 4566, runs the existing `kms-setup` build on the host against it (it also creates the
-KMS keys, the bucket and the queue), then creates two Secrets from the files it wrote: `edt-certificate-store` in `edt`
+The script (`deploy/edt.sh secrets`, also part of `up`) forwards Floci to a local port (14566 by default, so a Compose
+Floci on 4566 does not clash), runs the existing `kms-setup` build on the host against it (it also creates the KMS keys,
+the bucket and the queue), writing its files to a temporary folder that is deleted afterwards, then creates two Secrets
+from those files, replacing both together because every run makes a new test CA and DSP key: `edt-certificate-store` in `edt`
 (and in `dcc-tools` if the simulator needs it) and `dsp-signing-key` in `dcc-tools`. Pods that mount a missing Secret wait
 in `ContainerCreating`, so the apps start as soon as the Secrets appear.
 *Why:* needs no change to dcc-tools code, no extra RBAC and no `kubectl` image. The same flow as Compose, with the
@@ -129,7 +131,10 @@ on Docker Desktop but make the setup depend on that product).
 - **Local images are not visible to the cluster node** (confirmed by the spike) → the script loads each image into the
   node. This depends on the node container being named `desktop-control-plane` and having `ctr`; the script checks both
   and stops with a clear message if not (for example after Docker Desktop changes how it provisions the cluster).
-- **Host-side kms-setup needs the JDK and a free port 4566** → documented prerequisite; the script checks the port.
+- **Host-side kms-setup needs the JDK and a free local port** (14566 by default, `EDT_FLOCI_LOCAL_PORT` to change it) →
+  documented prerequisite; the script stops with a clear message if the port-forward cannot start.
+- **A re-run replaces the CA and the DSP key**, so running apps and the simulator hold the old ones until restarted →
+  the script says so at the end; `up` always starts the apps after this step.
 - **Docker Desktop Kubernetes can be switched off or reset** → the script checks the `docker-desktop` context and refuses
   to run against any other context, so it cannot touch a real cluster by mistake.
 - **Compose and cluster configuration can drift** → the spec requires the same keys; a task compares them.

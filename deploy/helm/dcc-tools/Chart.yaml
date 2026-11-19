@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dcc-tools
+description: The DCC side of the EDT for a local cluster - Temporal, Floci (AWS), Kafka and the DSP simulator. In production DCC provides and runs these.
+type: application
+version: 0.1.0
+appVersion: "local"

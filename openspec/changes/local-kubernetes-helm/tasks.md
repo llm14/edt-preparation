@@ -7,16 +7,16 @@
 
 ## 2. Emulated DCC side chart (`deploy/helm/dcc-tools`)
 
-- [ ] 2.1 Add PostgreSQL, the `temporal-schema` Job, the Temporal Server (with `enableServiceLinks: false`), the `temporal-namespace` Job and the Temporal UI. The Jobs mount the scripts from `dcc-tools/temporal/scripts` through `--set-file`. Verify: `helm lint` passes, and after install both Jobs show `Completed`, Temporal is ready, and the UI port-forward shows namespace `edt`.
-- [ ] 2.2 Add Floci with its Service on 4566. Verify: `kubectl port-forward` to 4566 answers, and the pod is ready.
-- [ ] 2.3 Add the Kafka broker advertising `kafka.dcc-tools.svc.cluster.local:9092`, and the topics Job using `dcc-tools/kafka/create-topics.sh`. Keep the placeholder comments about topics and authentication from the Compose file, marked [CONFIRM]. Verify: the topics Job completes, and `kafka-topics.sh --list` from a pod in the `edt` namespace returns the three `edt.*` topics.
-- [ ] 2.4 Add the DSP simulator, mounting the `dsp-signing-key` Secret read-only and sending Responses to the Response Listener's full service name (value in `values.yaml`). Verify: the pod waits in `ContainerCreating` while the Secret is missing and becomes ready once it exists (after task 3.1).
-- [ ] 2.5 Document the chart (what it emulates, what each value means) in `deploy/helm/dcc-tools/README.md`. Verify: every value in `values.yaml` is described, and the placeholders for Kafka topics and authentication are named.
+- [x] 2.1 Add PostgreSQL, the `temporal-schema` Job, the Temporal Server (with `enableServiceLinks: false`), the `temporal-namespace` Job and the Temporal UI. The Jobs mount the scripts from `dcc-tools/temporal/scripts` through `--set-file`. Verify: `helm lint` passes, and after install both Jobs show `Completed`, Temporal is ready, and the UI port-forward shows namespace `edt`.
+- [x] 2.2 Add Floci with its Service on 4566. Verify: `kubectl port-forward` to 4566 answers, and the pod is ready.
+- [x] 2.3 Add the Kafka broker advertising `kafka.dcc-tools.svc.cluster.local:9092`, and the topics Job using `dcc-tools/kafka/create-topics.sh`. Keep the placeholder comments about topics and authentication from the Compose file, marked [CONFIRM]. Verify: the topics Job completes, and `kafka-topics.sh --list` from a pod in the `edt` namespace returns the three `edt.*` topics.
+- [x] 2.4 Add the DSP simulator, mounting the `dsp-signing-key` Secret read-only and sending Responses to the Response Listener's full service name (value in `values.yaml`). Verify: the pod waits in `ContainerCreating` while the Secret is missing and becomes ready once it exists (after task 3.1).
+- [x] 2.5 Document the chart (what it emulates, what each value means) in `deploy/helm/dcc-tools/README.md`. Verify: every value in `values.yaml` is described, and the placeholders for Kafka topics and authentication are named.
 
 ## 3. Keys and certificates
 
-- [ ] 3.1 Add the secrets step to `deploy/edt.sh`: port-forward Floci, run the existing `kms-setup` build on the host against it with the same variables as Compose, then create `edt-certificate-store` (namespace `edt`) and `dsp-signing-key` (namespace `dcc-tools`) from the files. Verify: `kubectl get secret` shows both, and `kms-setup` has also created the bucket and queue (Floci answers a list-buckets call).
-- [ ] 3.2 Verify nothing is committed: after the step, `git status --short` shows no change and `git ls-files dcc-tools/certs dcc-tools/dsp-keys` prints nothing.
+- [x] 3.1 Add the secrets step to `deploy/edt.sh`: port-forward Floci, run the existing `kms-setup` build on the host against it with the same variables as Compose, then create `edt-certificate-store` (namespace `edt`) and `dsp-signing-key` (namespace `dcc-tools`) from the files. Verify: `kubectl get secret` shows both, and `kms-setup` has also created the bucket and queue (Floci answers a list-buckets call).
+- [x] 3.2 Verify nothing is committed: after the step, `git status --short` shows no change and `git ls-files dcc-tools/certs dcc-tools/dsp-keys` prints nothing.
 
 ## 4. EDT applications chart (`deploy/helm/edt`)
 
