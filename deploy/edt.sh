@@ -6,6 +6,14 @@
 #   deploy/edt.sh forward   port-forward the Temporal UI, the app health ports and Floci
 #   deploy/edt.sh secrets   (re)create the KMS keys, the bucket, the queue and the two Secrets (also part of "up")
 #
+# Settings (environment variables, all optional):
+#   EDT_UP_TIMEOUT          seconds "up" waits for the four apps to be ready (default 300)
+#   EDT_FLOCI_LOCAL_PORT    local port for the Floci port-forward used by "secrets" (default 14566)
+#   EDT_HELM_ARGS           extra arguments for the "helm upgrade --install" of the edt chart, for example
+#                           --set apps.orchestrator.env.EDT_TEMPORAL_TARGET=other:7233 (used to try failures)
+#
+# The script only ever touches the namespaces "edt" and "dcc-tools".
+#
 # Only the "docker-desktop" kubectl context is accepted. Anything else (a work or cloud cluster, for example) makes
 # the script stop before it runs a single cluster command. See openspec/changes/local-kubernetes-helm/design.md.
 set -euo pipefail
@@ -52,6 +60,7 @@ usage() {
 export MSYS_NO_PATHCONV=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"   # the chart and --set-file paths below are relative to the repository root
 EDT_NAMESPACE="edt"
 DCC_NAMESPACE="dcc-tools"
 FLOCI_LOCAL_PORT="${EDT_FLOCI_LOCAL_PORT:-14566}"   # a local port that is not 4566, so a Compose Floci does not clash
@@ -113,11 +122,164 @@ secrets_step() {
   echo "Secrets are in place. Restart the apps and the DSP simulator if they were already running."
 }
 
+# ---------------------------------------------------------------------------------------------------------------
+# up, down, forward
+# ---------------------------------------------------------------------------------------------------------------
+
+# Docker Desktop runs the cluster node as a container with this name; the images are loaded into it (design decision 5).
+NODE_CONTAINER="desktop-control-plane"
+UP_TIMEOUT="${EDT_UP_TIMEOUT:-300}"
+APPS=(batch-ingest orchestrator duis-signer response-listener)
+# "image|build folder": the four apps and the DSP simulator.
+IMAGES=(
+  "edt/batch-ingest:local|batch-ingest"
+  "edt/orchestrator:local|orchestrator"
+  "edt/duis-signer:local|duis-signer"
+  "edt/response-listener:local|response-listener"
+  "edt/dsp-simulator:local|dcc-tools/dsp-simulator"
+)
+
+check_prerequisites() {
+  local tool
+  for tool in docker helm kubectl; do
+    command -v "$tool" >/dev/null 2>&1 || die "$tool is not installed"
+  done
+  docker exec "$NODE_CONTAINER" ctr version >/dev/null 2>&1 \
+    || die "cannot reach the cluster node: 'docker exec $NODE_CONTAINER ctr version' failed." \
+           "Is Kubernetes enabled in Docker Desktop? Images are loaded into this node (design decision 5)."
+}
+
+build_images() {
+  echo "Building the applications (tests are skipped here; run ./gradlew test for them)..."
+  ./gradlew -q build -x test || die "the application build failed"
+  (cd dcc-tools && ./gradlew -q installDist) || die "the dcc-tools build failed"
+  local entry
+  for entry in "${IMAGES[@]}"; do
+    echo "Building image ${entry%%|*}..."
+    docker build -q -t "${entry%%|*}" "$(native_path "$REPO_ROOT/${entry##*|}")" >/dev/null \
+      || die "docker build failed for ${entry%%|*}"
+  done
+}
+
+# The node does not see images built with Docker, so each one is imported into the node's containerd.
+load_images() {
+  local entry image
+  for entry in "${IMAGES[@]}"; do
+    image="${entry%%|*}"
+    echo "Loading $image into the cluster node..."
+    docker save "$image" | docker exec -i "$NODE_CONTAINER" ctr -n k8s.io images import - >/dev/null \
+      || die "could not load $image into the node"
+  done
+}
+
+install_dcc_chart() {
+  echo "Installing the emulated DCC side (namespace $DCC_NAMESPACE)..."
+  # --reset-values: an upgrade starts from the chart's own values, never from what an earlier run was given
+  # (this Helm otherwise keeps a previous --set, so a plain "up" would silently keep an old override).
+  helm upgrade --install dcc-tools deploy/helm/dcc-tools -n "$DCC_NAMESPACE" --create-namespace --reset-values \
+    --set-file scripts.setupSchema=dcc-tools/temporal/scripts/setup-schema.sh \
+    --set-file scripts.createNamespace=dcc-tools/temporal/scripts/create-namespace.sh \
+    --set-file scripts.createTopics=dcc-tools/kafka/create-topics.sh \
+    --set-file temporal.dynamicConfig=dcc-tools/temporal/dynamicconfig/development-sql.yaml >/dev/null \
+    || die "helm could not install the dcc-tools chart"
+}
+
+install_edt_chart() {
+  echo "Installing the four EDT applications (namespace $EDT_NAMESPACE)..."
+  # shellcheck disable=SC2086   # EDT_HELM_ARGS is meant to be split into words
+  helm upgrade --install edt deploy/helm/edt -n "$EDT_NAMESPACE" --create-namespace --reset-values \
+    ${EDT_HELM_ARGS:-} >/dev/null \
+    || die "helm could not install the edt chart"
+}
+
+# Waits for all four apps at the same time, each for up to EDT_UP_TIMEOUT seconds, then names the ones that are not ready.
+wait_apps_ready() {
+  echo "Waiting up to ${UP_TIMEOUT}s for the four applications to be ready..."
+  local pids=() app i failed=()
+  for app in "${APPS[@]}"; do
+    kubectl -n "$EDT_NAMESPACE" rollout status "deploy/$app" --timeout="${UP_TIMEOUT}s" >/dev/null 2>&1 &
+    pids+=("$!")
+  done
+  for i in "${!APPS[@]}"; do
+    wait "${pids[$i]}" || failed+=("${APPS[$i]}")
+  done
+  if [ ${#failed[@]} -gt 0 ]; then
+    echo "edt.sh: not ready after ${UP_TIMEOUT}s: ${failed[*]}" >&2
+    kubectl -n "$EDT_NAMESPACE" get pods >&2 || true
+    local pod
+    for app in "${failed[@]}"; do
+      # The NEWEST pod: during a rollout "deploy/<app>" can pick the old, healthy one, which hides the problem.
+      pod="$(kubectl -n "$EDT_NAMESPACE" get pods -l "app=$app" --sort-by=.metadata.creationTimestamp -o name | tail -1)"
+      echo "--- last log lines of $pod" >&2
+      # A pod that keeps crashing may have no current log: fall back to its previous attempt.
+      { kubectl -n "$EDT_NAMESPACE" logs "$pod" --tail=8 2>/dev/null \
+          || kubectl -n "$EDT_NAMESPACE" logs "$pod" --previous --tail=8 2>&1; } | cut -c1-220 >&2 || true
+    done
+    return 1
+  fi
+  echo "All four applications are ready."
+}
+
+up_step() {
+  check_prerequisites
+  local dcc_existed="" edt_existed=""
+  helm status dcc-tools -n "$DCC_NAMESPACE" >/dev/null 2>&1 && dcc_existed=yes
+  helm status edt -n "$EDT_NAMESPACE" >/dev/null 2>&1 && edt_existed=yes
+
+  build_images
+  load_images
+  install_dcc_chart
+  secrets_step
+  install_edt_chart
+
+  # Pods read the certificate store and the DSP key at start. On a second run the secrets step has replaced them
+  # (new test CA, new DSP key), so pods that were already running must start again to pick them up.
+  if [ -n "$dcc_existed" ]; then
+    kubectl -n "$DCC_NAMESPACE" rollout restart deploy/dsp-simulator >/dev/null
+  fi
+  if [ -n "$edt_existed" ]; then
+    kubectl -n "$EDT_NAMESPACE" rollout restart "${APPS[@]/#/deploy/}" >/dev/null
+  fi
+
+  wait_apps_ready || exit 1
+  echo "Done. Port-forward with: deploy/edt.sh forward"
+}
+
+# Removes only what this script created. The images stay in the node (they are replaced the next time "up" runs).
+down_step() {
+  echo "Removing the EDT applications and the emulated DCC side..."
+  helm uninstall edt -n "$EDT_NAMESPACE" >/dev/null 2>&1 || true
+  helm uninstall dcc-tools -n "$DCC_NAMESPACE" >/dev/null 2>&1 || true
+  # The Secrets made by the secrets step are not part of a release, so deleting the namespaces removes them too.
+  kubectl delete namespace "$EDT_NAMESPACE" "$DCC_NAMESPACE" --ignore-not-found --wait=true
+}
+
+# The same local ports as the Docker Compose setup, so existing notes and bookmarks still work.
+forward_step() {
+  local pids=()
+  trap 'kill "${pids[@]}" 2>/dev/null || true' EXIT INT TERM
+  forward() {   # forward <namespace> <service> <local port> <service port> <what it is>
+    kubectl -n "$1" port-forward "svc/$2" "$3:$4" >/dev/null 2>&1 &
+    pids+=("$!")
+    printf '  http://localhost:%-5s %s\n' "$3" "$5"
+  }
+  echo "Forwarding (Ctrl+C stops all of them):"
+  forward "$DCC_NAMESPACE" temporal-ui 8088 8088 "Temporal UI"
+  forward "$DCC_NAMESPACE" floci 4566 4566 "Floci (AWS endpoint)"
+  forward "$EDT_NAMESPACE" batch-ingest 8081 8081 "Batch Ingest (/q/health/ready)"
+  forward "$EDT_NAMESPACE" orchestrator 8082 8082 "Orchestrator (/q/health/ready)"
+  forward "$EDT_NAMESPACE" duis-signer 8083 8083 "DUIS Signer (/q/health/ready)"
+  forward "$EDT_NAMESPACE" response-listener 8084 8084 "Response Listener (/q/health/ready)"
+  wait
+}
+
 [ $# -eq 1 ] || usage
 require_context
 
 case "$1" in
+  up) up_step ;;
+  down) down_step ;;
+  forward) forward_step ;;
   secrets) secrets_step ;;
-  up | down | forward) die "'$1' is not implemented yet (task 5.1 in the local-kubernetes-helm change)" ;;
   *) usage ;;
 esac

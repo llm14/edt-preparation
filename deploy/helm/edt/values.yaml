@@ -1,0 +1,46 @@
+# Values for the four EDT applications on a LOCAL TEST cluster.
+# One template (templates/apps.yaml) renders a ConfigMap, a Deployment and a Service for each entry under "apps".
+#
+# The environment of each app is the one docker-compose.yml gives it, with the short service names replaced by full
+# cluster names, because the emulated DCC side runs in the "dcc-tools" namespace and the apps in "edt".
+# deploy/check-env-keys.sh checks that nothing is missing, extra or different.
+
+image:
+  repository: edt          # the image of an app is <repository>/<app name>:<tag>, for example edt/orchestrator:local
+  tag: local
+  pullPolicy: IfNotPresent # deploy/edt.sh loads the images into the cluster node; nothing is pulled from a registry
+
+# The Secret with the certificate store (certificates only, no private keys), created by "deploy/edt.sh secrets".
+certificateStore:
+  secretName: edt-certificate-store
+  mountPath: /certs
+
+apps:
+  batch-ingest:
+    port: 8081
+    certificateStore: false   # Batch Ingest verifies the Manifest with KMS and needs no certificate
+    env:
+      EDT_TEMPORAL_TARGET: temporal.dcc-tools.svc.cluster.local:7233
+      EDT_AWS_ENDPOINT: http://floci.dcc-tools.svc.cluster.local:4566   # SQS, S3 and KMS (Floci)
+  orchestrator:
+    port: 8082
+    certificateStore: true    # trusts the DSP certificate
+    env:
+      EDT_TEMPORAL_TARGET: temporal.dcc-tools.svc.cluster.local:7233
+      EDT_SERVICE_REQUEST_GATEWAY_URL: http://dsp-simulator.dcc-tools.svc.cluster.local:8090/duis/service-requests
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12           # the trusted DSP certificate
+      EDT_AWS_ENDPOINT: http://floci.dcc-tools.svc.cluster.local:4566   # S3: the Manifest rows
+      EDT_KAFKA_BOOTSTRAP_SERVERS: kafka.dcc-tools.svc.cluster.local:9092   # the results
+  duis-signer:
+    port: 8083
+    certificateStore: true    # holds the User Role certificates
+    env:
+      EDT_TEMPORAL_TARGET: temporal.dcc-tools.svc.cluster.local:7233
+      EDT_KMS_ENDPOINT: http://floci.dcc-tools.svc.cluster.local:4566   # the keys are in KMS (Floci)
+      EDT_SIGNING_CERTIFICATE_STORE: /certs/certificate-store.p12
+  response-listener:
+    port: 8084
+    certificateStore: true    # trusts the DSP certificate
+    env:
+      EDT_TEMPORAL_TARGET: temporal.dcc-tools.svc.cluster.local:7233   # it signals workflows through the Temporal Server
+      EDT_DSP_CERTIFICATE_STORE: /certs/certificate-store.p12           # the trusted DSP certificate

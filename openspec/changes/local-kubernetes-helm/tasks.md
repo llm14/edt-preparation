@@ -20,15 +20,15 @@
 
 ## 4. EDT applications chart (`deploy/helm/edt`)
 
-- [ ] 4.1 Add the looped Deployment, Service and ConfigMap for the four apps with `enableServiceLinks: false`, `runAsNonRoot`, and startup, readiness (`/q/health/ready`) and liveness (`/q/health/live`) probes. Mount the certificate store read-only only into Orchestrator, DUIS Signer and Response Listener. Verify: `helm lint` and `helm template` pass, and in the rendered output Batch Ingest has no Secret volume.
-- [ ] 4.2 Set the apps' environment from the same keys and values as `docker-compose.yml`, with service names replaced by full cluster names. Verify: a small check (script or Helm unit test) compares the key names per app against `docker-compose.yml` and reports any key missing or extra.
-- [ ] 4.3 Document the chart in `deploy/helm/edt/README.md`, including the table of deliberate differences from the model (from design.md). Verify: the table in the README matches design.md.
+- [x] 4.1 Add the looped Deployment, Service and ConfigMap for the four apps with `enableServiceLinks: false`, `runAsNonRoot`, and startup, readiness (`/q/health/ready`) and liveness (`/q/health/live`) probes. Mount the certificate store read-only only into Orchestrator, DUIS Signer and Response Listener. Verify: `helm lint` and `helm template` pass, and in the rendered output Batch Ingest has no Secret volume.
+- [x] 4.2 Set the apps' environment from the same keys and values as `docker-compose.yml`, with service names replaced by full cluster names. Verify: a small check (script or Helm unit test) compares the key names per app against `docker-compose.yml` and reports any key missing or extra.
+- [x] 4.3 Document the chart in `deploy/helm/edt/README.md`, including the table of deliberate differences from the model (from design.md). Verify: the table in the README matches design.md.
 
 ## 5. Install, remove and failure behaviour
 
-- [ ] 5.1 Complete `deploy/edt.sh` with `up` (build images, load them into the node as in design decision 5, install the DCC chart, secrets step, install the EDT chart, wait for ready), `down` (remove both releases and namespaces) and `forward`. Verify: on a cluster with no EDT objects, `up` ends successfully with all four apps ready and `down` leaves neither namespace.
-- [ ] 5.2 Verify the failure scenarios of the spec: scale Temporal to zero and check that the apps are not ready and are restarted; make one app unready and check that `up` names it and fails within its time limit.
-- [ ] 5.3 Add a README section "Run on a local cluster" (prerequisites, `up`, `down`, `forward`, what to do after a Floci restart). Verify: following it on a clean checkout needs no step that is not written there.
+- [x] 5.1 Complete `deploy/edt.sh` with `up` (build images, load them into the node as in design decision 5, install the DCC chart, secrets step, install the EDT chart, wait for ready), `down` (remove both releases and namespaces) and `forward`. Verify: on a cluster with no EDT objects, `up` ends successfully with all four apps ready and `down` leaves neither namespace.
+- [x] 5.2 Verify the failure scenarios of the spec: scale Temporal to zero and check that the apps are not ready and are restarted; make one app unready and check that `up` names it and fails within its time limit.
+- [x] 5.3 Add a README section "Run on a local cluster" (prerequisites, `up`, `down`, `forward`, what to do after a Floci restart). Verify: following it on a clean checkout needs no step that is not written there.
 
 ## 6. End-to-end check
 

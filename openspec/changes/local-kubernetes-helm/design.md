@@ -54,8 +54,10 @@ Because the apps and the DCC side are in different namespaces, addresses in valu
 install for no benefit here).
 
 ### 5. Images: the Compose tags, built with the existing build, then loaded into the node
-The script runs `./gradlew build` and `docker compose build` (and the dcc-tools equivalents), which produce
-`edt/<app>:local`, then loads each image into the cluster node:
+The script runs `./gradlew build -x test` (and `installDist` in dcc-tools) and then `docker build -t edt/<app>:local`
+on each app's own folder, the same Dockerfile and tag Compose uses. (Plain `docker build`, not `docker compose build`,
+so the script does not depend on the external Compose network `edt` existing.) It then loads each image into the
+cluster node:
 `docker save <image> | docker exec -i desktop-control-plane ctr -n k8s.io images import -`.
 Charts use `imagePullPolicy: IfNotPresent` and no registry.
 *Why:* no second build path to keep in sync, and no registry to run.
@@ -133,6 +135,9 @@ on Docker Desktop but make the setup depend on that product).
   and stops with a clear message if not (for example after Docker Desktop changes how it provisions the cluster).
 - **Host-side kms-setup needs the JDK and a free local port** (14566 by default, `EDT_FLOCI_LOCAL_PORT` to change it) →
   documented prerequisite; the script stops with a clear message if the port-forward cannot start.
+- **Helm 4 keeps the previous run's `--set` values on `helm upgrade`** (seen with v4.3.1: an override used to break one
+  app stayed in the release after a plain re-install) → both installs pass `--reset-values`, so every `up` starts from
+  the chart's values plus what the script itself passes.
 - **A re-run replaces the CA and the DSP key**, so running apps and the simulator hold the old ones until restarted →
   the script says so at the end; `up` always starts the apps after this step.
 - **Docker Desktop Kubernetes can be switched off or reset** → the script checks the `docker-desktop` context and refuses
