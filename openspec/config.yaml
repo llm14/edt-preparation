@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Architecture reference: architecture-model.md and
+  architecture-model-sequences-deployment.md at the repository root (read-only
+  snapshots of the LikeC4 model). Specs describe behaviour and link to the
+  model; they do not restate containers, relations or flows.
+  Never deviate from the model. If a tool or the code conflicts with it, fix or
+  replace the tool, or report the mismatch.
+
+  Open points are listed in CLAUDE.md ("Open points and mismatches"). Any
+  artifact that touches one must list it as an open question and must not
+  write it as a fact or a requirement.
+
+  Technical constraints (details in CLAUDE.md, "Technical decisions so far"):
+  Java 25, plain Quarkus and the Temporal Java SDK with no integration
+  library; Clean Architecture with an architecture test; signing only through
+  JCA engine classes, provider chosen by configuration; structured ECS JSON
+  logs. Specs state behaviour, not technology, unless the technology is itself
+  a requirement. Technology choices belong in design.md.
+
+  Spec layout: specs/<container>/<capability>/spec.md, where <container> is
+  one of batch-ingest, orchestrator, duis-signer, response-listener. Behaviour
+  that spans containers goes in specs/<cross-cutting-name>/, for example
+  specs/service-request/.
+
+rules:
+  proposal:
+    - State what is out of scope.
+    - Include an "Open questions" section.
+  specs:
+    - Focus on behaviour at container boundaries; Flow content is low priority.
+    - Tag any requirement that rests on an unconfirmed point with [CONFIRM].
+  design:
+    - Include an "Open questions" section and name the model element affected.
+    - Record each technology choice as a decision with the alternative rejected.
+  tasks:
+    - Keep each task small and name the test that proves it.
