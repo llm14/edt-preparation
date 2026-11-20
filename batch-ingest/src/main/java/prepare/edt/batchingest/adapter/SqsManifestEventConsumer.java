@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.ObjectCreatedEvent.UnreadableEventException;
 import prepare.edt.batchingest.entity.ManifestRef;
+import prepare.edt.batchingest.infrastructure.Interaction;
 import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.IngestManifest;
 import prepare.edt.batchingest.usecase.IngestManifest.Outcome;
@@ -28,6 +29,9 @@ public final class SqsManifestEventConsumer {
     /** The longest long poll SQS allows: an empty queue costs one request every 20 seconds. */
     static final int WAIT_SECONDS = 20;
 
+    /** Model interface: Manifest Event Consumer to the Manifest Events queue (receive and delete). */
+    static final String SQS_INTERFACE = "edt.batchIngestReqSqs";
+
     private final SqsClient sqs;
     private final String queueName;
     private final IngestManifest ingestManifest;
@@ -44,15 +48,22 @@ public final class SqsManifestEventConsumer {
         if (queueUrl == null) {
             queueUrl = sqs.getQueueUrl(r -> r.queueName(queueName)).queueUrl();
         }
+        long startedAt = System.nanoTime();
         var messages = sqs.receiveMessage(r -> r
                 .queueUrl(queueUrl)
                 .waitTimeSeconds(WAIT_SECONDS)
                 .maxNumberOfMessages(10)).messages();
-        messages.forEach(this::handle);
+        long receiveNanos = System.nanoTime() - startedAt;
+        messages.forEach(message -> handle(message, receiveNanos));
         return messages.size();
     }
 
     void handle(Message message) {
+        handle(message, 0);
+    }
+
+    /** {@code receiveNanos}: how long the receive call that returned this message took. */
+    void handle(Message message, long receiveNanos) {
         ManifestRef manifest;
         try {
             manifest = ObjectCreatedEvent.parse(message.body());
@@ -67,8 +78,8 @@ public final class SqsManifestEventConsumer {
 
         try (var fields = LogFields.of("edt.manifest.bucket", manifest.bucket(), "edt.manifest.key", manifest.key(),
                 "edt.manifest.version_id", manifest.versionId(), "edt.sqs_message_id", message.messageId())) {
-            try (var received = LogFields.of("event.action", "manifest-received")) {
-                LOG.info("Manifest received");
+            try (var received = Interaction.outbound(SQS_INTERFACE, "manifest-received").duration(receiveNanos)) {
+                received.log("Manifest received");
             }
 
             Outcome outcome;
@@ -82,25 +93,23 @@ public final class SqsManifestEventConsumer {
                 return;
             }
 
-            switch (outcome) {
-                case Outcome.Started started -> logBatch("batch-started", "Batch started", manifest);
-                case Outcome.AlreadyStarted already ->
-                        logBatch("batch-already-started", "Batch already started: duplicate message", manifest);
-                case Outcome.Rejected rejected -> {
-                    try (var security = LogFields.of("event.kind", "alert", "event.category", "intrusion_detection",
-                            "event.action", "manifest-signature-invalid", "event.outcome", "failure",
-                            "error.message", rejected.reason())) {
-                        SECURITY.warn("Manifest rejected: its DCC signature is not valid");
-                    }
+            // Started and AlreadyStarted are logged by the Batch Starter, at the call to Temporal.
+            if (outcome instanceof Outcome.Rejected rejected) {
+                try (var security = LogFields.of("event.kind", "alert", "event.category", "intrusion_detection",
+                        "event.action", "manifest-signature-invalid", "event.outcome", "failure",
+                        "error.message", rejected.reason())) {
+                    SECURITY.warn("Manifest rejected: its DCC signature is not valid");
                 }
             }
-            sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(message.receiptHandle()));
-        }
-    }
-
-    private static void logBatch(String action, String text, ManifestRef manifest) {
-        try (var fields = LogFields.of("event.action", action, "edt.batch_id", manifest.batchWorkflowId())) {
-            LOG.info(text);
+            try (var deleted = Interaction.outbound(SQS_INTERFACE, "sqs-message-deleted")) {
+                try {
+                    sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(message.receiptHandle()));
+                } catch (RuntimeException e) {
+                    deleted.failure().log("Could not delete the message from the Manifest Events queue");
+                    throw e;
+                }
+                deleted.log("Message deleted from the Manifest Events queue");
+            }
         }
     }
 }

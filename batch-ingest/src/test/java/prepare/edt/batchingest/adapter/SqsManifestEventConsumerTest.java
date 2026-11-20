@@ -2,6 +2,7 @@ package prepare.edt.batchingest.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -108,19 +109,64 @@ class SqsManifestEventConsumerTest {
     }
 
     @Test
-    void the_batch_lines_carry_edt_batch_id_and_not_the_old_name() {
+    void the_message_received_and_the_message_deleted_are_two_interaction_lines() {
         try (LogCapture log = new LogCapture()) {
             consumer(m -> Verdict.signedByDcc(), true).pollOnce();
-            consumer(m -> Verdict.signedByDcc(), false).pollOnce();
 
-            var lines = log.lines(SqsManifestEventConsumer.class).stream()
-                    .filter(l -> l.message().startsWith("Batch ")).toList();
-            assertEquals(2, lines.size(), "Batch started, and Batch already started");
+            var lines = log.lines("edt.interaction");
+            assertEquals(List.of("manifest-received", "sqs-message-deleted"),
+                    lines.stream().map(l -> l.fields().get("event.action")).toList());
             for (var line : lines) {
-                assertEquals("batch-edt-manifests/sample.csv/v1", line.fields().get("edt.batch_id"));
-                assertFalse(line.fields().containsKey("edt.batch_workflow_id"));
+                assertEquals("edt.batchIngestReqSqs", line.fields().get("edt.interface"));
+                assertEquals("outbound", line.fields().get("network.direction"));
+                assertEquals("success", line.fields().get("event.outcome"));
+                assertEquals("m1", line.fields().get("edt.sqs_message_id"));
+                assertTrue(Long.parseLong(line.fields().get("event.duration")) >= 0);
             }
-            assertEquals("Batch started", lines.getFirst().message());
+            assertEquals("edt-manifests", lines.getFirst().fields().get("edt.manifest.bucket"));
+        }
+    }
+
+    @Test
+    void a_poll_with_no_message_writes_no_interaction_line() {
+        var empty = new SqsClient() {
+            @Override
+            public GetQueueUrlResponse getQueueUrl(GetQueueUrlRequest request) {
+                return GetQueueUrlResponse.builder().queueUrl("http://floci:4566/000000000000/q").build();
+            }
+
+            @Override
+            public ReceiveMessageResponse receiveMessage(ReceiveMessageRequest request) {
+                return ReceiveMessageResponse.builder().build();
+            }
+
+            @Override
+            public String serviceName() {
+                return "sqs";
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        try (LogCapture log = new LogCapture()) {
+            int received = new SqsManifestEventConsumer(empty, "q",
+                    new IngestManifest(m -> Verdict.signedByDcc(), m -> true)).pollOnce();
+
+            assertEquals(0, received);
+            assertEquals(List.of(), log.lines("edt.interaction"));
+        }
+    }
+
+    @Test
+    void the_batch_lines_are_written_by_the_starter_not_the_consumer() {
+        try (LogCapture log = new LogCapture()) {
+            consumer(m -> Verdict.signedByDcc(), true).pollOnce();
+
+            assertEquals(List.of(), log.lines(SqsManifestEventConsumer.class).stream()
+                    .filter(l -> l.message().startsWith("Batch ")).toList());
+            assertFalse(log.lines("edt.interaction").stream()
+                    .anyMatch(l -> l.fields().containsKey("edt.batch_workflow_id")));
         }
     }
 }

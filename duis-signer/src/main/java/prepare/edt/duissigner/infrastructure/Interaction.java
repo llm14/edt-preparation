@@ -28,6 +28,7 @@ public final class Interaction implements AutoCloseable {
     private final LogFields fields;
     private final long startedAt = System.nanoTime();
     private boolean failed;
+    private Long durationNanos;
 
     private Interaction(String edtInterface, String action, String direction) {
         this.fields = LogFields.of("event.action", action, "edt.interface", edtInterface, "network.direction", direction);
@@ -55,10 +56,16 @@ public final class Interaction implements AutoCloseable {
         return this;
     }
 
-    /** Writes the INFO line with the duration so far and the outcome. */
+    /** Uses a duration measured by the caller, for a call that was made before this helper was created. */
+    public Interaction duration(long nanos) {
+        durationNanos = nanos;
+        return this;
+    }
+
+    /** Writes the INFO line with the duration (the one set, or the time since creation) and the outcome. */
     public void log(String message) {
         fields.add("event.outcome", failed ? "failure" : "success");
-        fields.add("event.duration", System.nanoTime() - startedAt);
+        fields.add("event.duration", durationNanos != null ? durationNanos : System.nanoTime() - startedAt);
         LOG.info(message);
     }
 

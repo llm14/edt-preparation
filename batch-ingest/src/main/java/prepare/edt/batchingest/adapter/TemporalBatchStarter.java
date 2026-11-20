@@ -5,6 +5,8 @@ import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowExecutionAlreadyStarted;
 import io.temporal.client.WorkflowOptions;
 import prepare.edt.batchingest.entity.ManifestRef;
+import prepare.edt.batchingest.infrastructure.Interaction;
+import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.BatchStarter;
 
 /**
@@ -21,6 +23,9 @@ public final class TemporalBatchStarter implements BatchStarter {
 
     public static final String WORKFLOW_TYPE = "Batch";
 
+    /** Model interface: Batch Starter to the Temporal Server (gRPC). */
+    static final String TEMPORAL_INTERFACE = "edt.batchIngestReqGrpc";
+
     private final WorkflowClient client;
     private final String taskQueue;
 
@@ -36,11 +41,29 @@ public final class TemporalBatchStarter implements BatchStarter {
                 .setTaskQueue(taskQueue)
                 .setWorkflowIdReusePolicy(WorkflowIdReusePolicy.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE)
                 .build());
+        long startedAt = System.nanoTime();
+        boolean started;
+        RuntimeException failure = null;
         try {
             stub.start(new BatchInput(manifest.bucket(), manifest.key(), manifest.versionId()));
-            return true;
+            started = true;
         } catch (WorkflowExecutionAlreadyStarted e) {
-            return false;
+            started = false; // not a failure: a duplicate message, and the Batch exists
+        } catch (RuntimeException e) {
+            started = false;
+            failure = e;
         }
+        long nanos = System.nanoTime() - startedAt;
+
+        try (var ids = LogFields.of("edt.batch_id", manifest.batchWorkflowId(), "edt.temporal.task_queue", taskQueue);
+                var call = Interaction.outbound(TEMPORAL_INTERFACE, started || failure != null ? "batch-started" : "batch-already-started")
+                        .duration(nanos)) {
+            if (failure != null) {
+                call.failure().log("Could not start the Batch");
+                throw failure;
+            }
+            call.log(started ? "Batch started" : "Batch already started: duplicate message");
+        }
+        return started;
     }
 }

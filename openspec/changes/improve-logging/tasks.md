@@ -19,9 +19,9 @@ the final logging API.
 
 ## 3. Batch Ingest lines (rows 1 to 5)
 
-- [ ] 3.1 `SqsManifestEventConsumer`: move "Manifest received" to `edt.interaction` with the common keys (row 1); write `sqs-message-deleted` after the delete (row 2); write nothing for an empty poll. Verify: `SqsManifestEventConsumerTest` asserts both lines and their keys, and that `pollOnce` with no message writes no `edt.interaction` line.
-- [ ] 3.2 `S3ManifestVerifier`: write `manifest-read` after the S3 reads (row 3) and `manifest-signature-checked` around `signature.verify` (row 4), `failure` when the signature is invalid or missing. Verify: `S3ManifestVerifierTest` asserts both lines for a valid and for an invalid Manifest, and that neither contains the signature or any Manifest content.
-- [ ] 3.3 `TemporalBatchStarter`: write `batch-started` and `batch-already-started` here with the task queue and the duration (row 5), and remove them from the consumer. Verify: `TemporalBatchStarterTest` asserts one line for a new Batch and one for a duplicate, each with `edt.batch_id`; `SqsManifestEventConsumerTest` shows no second line for the same event.
+- [x] 3.1 `SqsManifestEventConsumer`: move "Manifest received" to `edt.interaction` with the common keys (row 1); write `sqs-message-deleted` after the delete (row 2); write nothing for an empty poll. Verify: `SqsManifestEventConsumerTest` asserts both lines and their keys, and that `pollOnce` with no message writes no `edt.interaction` line.
+- [x] 3.2 `S3ManifestVerifier`: write `manifest-read` after the S3 reads (row 3) and `manifest-signature-checked` around `signature.verify` (row 4), `failure` when the signature is invalid or missing. Verify: `S3ManifestVerifierTest` asserts both lines for a valid and for an invalid Manifest, and that neither contains the signature or any Manifest content.
+- [x] 3.3 `TemporalBatchStarter`: write `batch-started` and `batch-already-started` here with the task queue and the duration (row 5), and remove them from the consumer. Verify: `TemporalBatchStarterTest` asserts one line for a new Batch and one for a duplicate, each with `edt.batch_id`; `SqsManifestEventConsumerTest` shows no second line for the same event.
 
 ## 4. Orchestrator lines (rows 6 to 12)
 
