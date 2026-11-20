@@ -22,6 +22,10 @@ floci:
   # Open source (MIT), no account. In memory only.
   image: floci/floci:2.4.0
 
+kafkaUi:
+  # A developer tool to browse the topics, not part of the model. Open source (Apache-2.0), no account.
+  image: ghcr.io/kafbat/kafka-ui:v1.4.2
+
 kafka:
   image: apache/kafka:4.1.0
   # [CONFIRM] Plain text and placeholder topics: DCC owns the real cluster, its authentication and its topics.

@@ -3,7 +3,7 @@
 #
 #   deploy/edt.sh up        build images, install both charts, wait until the four apps are ready
 #   deploy/edt.sh down      remove both charts and their namespaces
-#   deploy/edt.sh forward   port-forward the Temporal UI, the app health ports and Floci
+#   deploy/edt.sh forward   port-forward the Temporal UI, the Kafka UI, the app health ports and Floci
 #   deploy/edt.sh secrets   (re)create the KMS keys, the bucket, the queue and the two Secrets (also part of "up")
 #
 # Settings (environment variables, all optional):
@@ -265,6 +265,7 @@ forward_step() {
   }
   echo "Forwarding (Ctrl+C stops all of them):"
   forward "$DCC_NAMESPACE" temporal-ui 8088 8088 "Temporal UI"
+  forward "$DCC_NAMESPACE" kafka-ui 8089 8089 "Kafka UI (topics and messages)"
   forward "$DCC_NAMESPACE" floci 4566 4566 "Floci (AWS endpoint)"
   forward "$EDT_NAMESPACE" batch-ingest 8081 8081 "Batch Ingest (/q/health/ready)"
   forward "$EDT_NAMESPACE" orchestrator 8082 8082 "Orchestrator (/q/health/ready)"

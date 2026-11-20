@@ -998,7 +998,7 @@ Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine
 
 The same four applications and the same `dcc-tools`, on the Kubernetes that comes with Docker Desktop, installed with
 Helm. The OpenSpec change `local-kubernetes-helm` (in `openspec/changes/`) has the reasons and the decisions.
-Docker Compose stays as it is; use one or the other, because both want the ports 8081-8084, 8088 and 4566.
+Docker Compose stays as it is; use one or the other, because both want the ports 8081-8084, 8088, 8089 and 4566.
 
 **Prerequisites** (nothing needs an account):
 - Docker Desktop with **Kubernetes enabled** (Settings, Kubernetes). `kubectl config current-context` must say `docker-desktop`.
@@ -1008,7 +1008,7 @@ Docker Compose stays as it is; use one or the other, because both want the ports
 
 ```
 deploy/edt.sh up        # build, install, wait until the four apps are ready (about 3 minutes the first time)
-deploy/edt.sh forward   # Temporal UI :8088, Floci :4566, the apps' health on :8081-:8084; Ctrl+C stops
+deploy/edt.sh forward   # Temporal UI :8088, Kafka UI :8089, Floci :4566, the apps' health on :8081-:8084; Ctrl+C stops
 deploy/edt.sh down      # remove everything the script created
 ```
 

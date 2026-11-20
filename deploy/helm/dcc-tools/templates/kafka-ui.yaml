@@ -1,0 +1,53 @@
+# Kafka UI: a web page to browse the EDT topics and read their messages. A DEVELOPER TOOL for the local cluster only,
+# not something DCC provides (it mirrors the kafka-ui service of dcc-tools/docker-compose.override.yml).
+#
+# Open source (Kafbat UI, Apache-2.0), no account. It only reads: it is not a producer and not part of the model.
+# Reach it with deploy/edt.sh forward: http://localhost:8089
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+  labels:
+    app: kafka-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-ui
+  template:
+    metadata:
+      labels:
+        app: kafka-ui
+    spec:
+      # Without this, Kubernetes injects KAFKA_UI_* variables for the Service named "kafka-ui", next to the KAFKA_*
+      # settings this image reads (the same reason as for the broker, design decision 10 of local-kubernetes-helm).
+      enableServiceLinks: false
+      containers:
+        - name: kafka-ui
+          image: {{ .Values.kafkaUi.image }}
+          env:
+            - name: KAFKA_CLUSTERS_0_NAME
+              value: edt
+            # The INTERNAL listener, by the full service name the broker advertises.
+            - name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS
+              value: kafka.{{ .Release.Namespace }}.svc.{{ .Values.kafka.clusterDomain }}:9092
+            - name: DYNAMIC_CONFIG_ENABLED
+              value: "false"   # the cluster comes from these settings only
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+spec:
+  selector:
+    app: kafka-ui
+  ports:
+    - port: 8089   # the same local port as in Compose (8080 and 8088 are taken on this machine)
+      targetPort: 8080
