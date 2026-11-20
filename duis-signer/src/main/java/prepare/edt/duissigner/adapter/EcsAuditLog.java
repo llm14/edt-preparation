@@ -10,7 +10,8 @@ import prepare.edt.duissigner.usecase.AuditLog;
  * Its own logger name, "edt.audit", so the log agent can route audit events separately.
  *
  * Fields: event.kind=event, event.category=configuration, event.action=sign-service-request,
- * event.outcome=success|failure, plus the Request ID, SRV, User Role and reason.
+ * event.outcome=success|failure, plus the Request ID, SRV, User Role and reason, the model interface of the signing call
+ * (edt.interface) and how long the signing took (event.duration, nanoseconds).
  */
 public final class EcsAuditLog implements AuditLog {
 
@@ -24,6 +25,8 @@ public final class EcsAuditLog implements AuditLog {
                 "event.category", "configuration",
                 "event.action", "sign-service-request",
                 "event.outcome", signed ? "success" : "failure",
+                "edt.interface", "edt.duisSignerReqKms",
+                "event.duration", event.durationNanos(),
                 "edt.request_id", String.valueOf(event.requestId()),
                 "edt.srv", String.valueOf(event.srv()))) {
             if (signed) {

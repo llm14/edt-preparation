@@ -83,6 +83,23 @@ class BatchLogFieldsTest {
     }
 
     @Test
+    void batch_start_received_is_written_once_even_when_the_batch_continues_as_new_twice() {
+        try (LogCapture log = new LogCapture()) {
+            run(new BatchWorkflowImpl.BatchSettings(2, 2, 1, 2));
+
+            assertEquals(2, log.lines(BatchWorkflowImpl.class, "Batch continues as new").size(), "three runs");
+            var lines = log.lines("edt.interaction").stream()
+                    .filter(l -> "batch-start-received".equals(l.fields().get("event.action"))).toList();
+            assertEquals(1, lines.size());
+            var fields = lines.get(0).fields();
+            assertEquals(BATCH_ID, fields.get("edt.batch_id"));
+            assertEquals("edt.orchestratorReqGrpc", fields.get("edt.interface"));
+            assertEquals("inbound", fields.get("network.direction"));
+            assertEquals("success", fields.get("event.outcome"));
+        }
+    }
+
+    @Test
     void continuing_as_new_is_logged_with_the_page_as_a_field() {
         try (LogCapture log = new LogCapture()) {
             run(new BatchWorkflowImpl.BatchSettings(2, 2, 1, 2));

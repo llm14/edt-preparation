@@ -66,6 +66,7 @@ public class TemporalWorker {
     }
 
     void onStart(@Observes StartupEvent event) {
+        long startedAt = System.nanoTime();
         factory = WorkerFactory.newInstance(client);
 
         String signingQueue = config.signingTaskQueue();
@@ -99,8 +100,8 @@ public class TemporalWorker {
 
         factory.start();
 
-        try (var fields = LogFields.of(
-                "event.action", "worker-started",
+        try (var call = Interaction.outbound("edt.orchestratorReqGrpc", "worker-started").duration(System.nanoTime() - startedAt);
+                var fields = LogFields.of(
                 "temporal.target", config.target(),
                 "temporal.namespace", config.namespace(),
                 "temporal.task_queue", config.taskQueue() + "," + sendQueue,
@@ -108,7 +109,7 @@ public class TemporalWorker {
                 "edt.response_timeout", String.valueOf(responseTimeout),
                 "edt.send_rate_per_second", String.valueOf(sendRate),
                 "edt.batch", batchSettings.toString())) {
-            LOG.info("Temporal workers started");
+            call.log("Temporal workers started");
         }
     }
 

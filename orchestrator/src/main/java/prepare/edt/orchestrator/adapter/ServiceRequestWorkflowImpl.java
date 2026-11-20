@@ -10,6 +10,8 @@ import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.entity.RequestId;
+import prepare.edt.orchestrator.infrastructure.Interaction;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.entity.DccAlerts;
 import prepare.edt.orchestrator.entity.FairnessKey;
@@ -139,6 +141,15 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
 
     @Override
     public void onDspMessage(DspMessage message) {
+        // Row 10. The signal can arrive before the workflow method runs, so the Request ID comes from the workflow ID.
+        try (var call = Interaction.inbound("edt.orchestratorReqGrpc", "dsp-message-received")
+                .with("edt.request_id", RequestId.requestIdOf(Workflow.getInfo().getWorkflowId()))
+                .with("edt.message_type", message.type())) {
+            if (message.alertCode() != null) {
+                call.with("edt.alert_code", message.alertCode());
+            }
+            call.log(Workflow.getLogger(Interaction.LOGGER), "DSP message received");
+        }
         messages.add(message);
     }
 

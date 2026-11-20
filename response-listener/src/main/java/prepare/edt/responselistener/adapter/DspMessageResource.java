@@ -8,6 +8,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import prepare.edt.responselistener.infrastructure.Interaction;
 import prepare.edt.responselistener.infrastructure.LogFields;
 import prepare.edt.responselistener.usecase.DspMessageReader.UnreadableMessageException;
 import prepare.edt.responselistener.usecase.DspSignatureCheck.InvalidDspSignatureException;
@@ -39,20 +40,20 @@ public class DspMessageResource {
     @Consumes({MediaType.APPLICATION_XML, MediaType.TEXT_XML})
     @Produces(MediaType.TEXT_PLAIN)
     public Response receive(String body) {
+        long startedAt = System.nanoTime();
         try {
             RouteDspMessage.Result result = routeDspMessage.route(body);
             boolean signalled = result instanceof RouteDspMessage.Result.Signalled;
-            try (var fields = LogFields.of(
-                    "event.action", signalled ? "dsp-message-signalled" : "dsp-message-orphan",
-                    "edt.request_id", result.message().requestId(),
-                    "edt.message_type", result.message().kind().name(),
-                    "edt.alert_code", String.valueOf(result.message().alertCode()),
-                    "temporal.workflow_id", result.workflowId())) {
-                if (signalled) {
-                    LOG.info("DSP message delivered to its Service Request workflow");
-                } else {
-                    LOG.warn("No running Service Request workflow for this DSP message");
-                }
+            // Row 16: one line for the message handled, which includes the signal to Temporal. Made after the routing,
+            // not before it, so it never overlaps the lines of the failure branches below (they set event.action too).
+            try (var call = Interaction.inbound("dcc.dspGatewayReqHttp", signalled ? "dsp-message-signalled" : "dsp-message-orphan")
+                    .duration(System.nanoTime() - startedAt)
+                    .with("edt.request_id", result.message().requestId())
+                    .with("edt.message_type", result.message().kind().name())
+                    .with("edt.alert_code", String.valueOf(result.message().alertCode()))
+                    .with("temporal.workflow_id", result.workflowId())) {
+                call.log(signalled ? "DSP message delivered to its Service Request workflow"
+                        : "No running Service Request workflow for this DSP message");
             }
             return Response.ok(signalled ? "signalled" : "orphan").build();
         } catch (InvalidDspSignatureException e) {

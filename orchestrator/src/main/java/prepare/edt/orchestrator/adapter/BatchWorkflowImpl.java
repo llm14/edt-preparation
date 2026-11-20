@@ -5,6 +5,7 @@ import io.temporal.workflow.Async;
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
 import org.slf4j.Logger;
+import prepare.edt.orchestrator.infrastructure.Interaction;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.adapter.PageWorkflow.PageInput;
 
@@ -47,6 +48,12 @@ public class BatchWorkflowImpl implements BatchWorkflow {
         String batchId = Workflow.getInfo().getWorkflowId();
         if (input.progress() != null) {
             progress = input.progress();
+        } else {
+            // First run: the start the Batch Ingest asked for. Not repeated after a continue-as-new.
+            try (var call = Interaction.inbound("edt.orchestratorReqGrpc", "batch-start-received")
+                    .with("edt.batch_id", batchId)) {
+                call.log(Workflow.getLogger(Interaction.LOGGER), "Batch start received");
+            }
         }
         int startedThisRun = 0;
 

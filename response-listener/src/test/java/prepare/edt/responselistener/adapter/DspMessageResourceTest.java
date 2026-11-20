@@ -1,6 +1,8 @@
 package prepare.edt.responselistener.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 import prepare.edt.responselistener.usecase.DspSignatureCheck;
@@ -50,6 +52,41 @@ class DspMessageResourceTest {
         };
 
         assertEquals(500, resource(down).receive(RESPONSE).getStatus());
+    }
+
+    @Test
+    void a_signalled_message_is_one_inbound_interaction_line_with_the_ids_and_a_duration_and_no_xml() {
+        try (LogCapture log = new LogCapture()) {
+            resource((id, m) -> true).receive(RESPONSE);
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size());
+            assertInteraction(lines.get(0), "dsp-message-signalled");
+        }
+    }
+
+    @Test
+    void an_orphan_message_is_one_interaction_line_too() {
+        try (LogCapture log = new LogCapture()) {
+            resource((id, m) -> false).receive(RESPONSE);
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size());
+            assertInteraction(lines.get(0), "dsp-message-orphan");
+        }
+    }
+
+    static void assertInteraction(LogCapture.Line line, String action) {
+        var fields = line.fields();
+        assertEquals(action, fields.get("event.action"));
+        assertEquals("dcc.dspGatewayReqHttp", fields.get("edt.interface"));
+        assertEquals("inbound", fields.get("network.direction"));
+        assertEquals("success", fields.get("event.outcome"));
+        assertEquals("o:d:1", fields.get("edt.request_id"));
+        assertEquals("RESPONSE", fields.get("edt.message_type"));
+        assertTrue(Long.parseLong(fields.get("event.duration")) >= 0);
+        assertFalse(line.message().contains("<"));
+        assertFalse(fields.values().stream().anyMatch(v -> v.contains("<")), "no part of the XML is in the line");
     }
 
     static DspMessageResource resource(WorkflowSignaller signaller) {

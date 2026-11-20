@@ -38,6 +38,25 @@ class InteractionTest {
     }
 
     @Test
+    void an_inbound_call_has_a_duration_only_when_timed_or_set() {
+        try (LogCapture log = new LogCapture()) {
+            try (var call = Interaction.inbound("edt.test", "plain")) {
+                call.log("plain");
+            }
+            try (var call = Interaction.inbound("edt.test", "timed").timed()) {
+                call.log("timed");
+            }
+            try (var call = Interaction.inbound("edt.test", "set").duration(42)) {
+                call.log("set");
+            }
+            var lines = log.lines("edt.interaction");
+            assertFalse(lines.get(0).fields().containsKey("event.duration"));
+            assertTrue(Long.parseLong(lines.get(1).fields().get("event.duration")) >= 0);
+            assertEquals("42", lines.get(2).fields().get("event.duration"));
+        }
+    }
+
+    @Test
     void failure_can_be_set_and_extra_fields_added() {
         try (LogCapture log = new LogCapture()) {
             try (var call = Interaction.outbound("edt.test", "test-called")) {

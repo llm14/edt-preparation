@@ -102,11 +102,20 @@ public class SigningWiring {
     }
 
     private static KeyStore loadKeyStore(SigningConfig signing) throws Exception {
-        KeyStore keyStore = KeyStore.getInstance(signing.keystoreType(), signing.keystoreProvider());
-        try (InputStream in = Files.newInputStream(Path.of(signing.certificateStore()))) {
-            keyStore.load(in, signing.certificateStorePassword().toCharArray());
+        // Never the store's password or content: its path only.
+        try (var call = Interaction.outbound("edt.duisSignerReqFile", "certificate-store-loaded")
+                .with("edt.certificate_store", signing.certificateStore())) {
+            KeyStore keyStore;
+            try (InputStream in = Files.newInputStream(Path.of(signing.certificateStore()))) {
+                keyStore = KeyStore.getInstance(signing.keystoreType(), signing.keystoreProvider());
+                keyStore.load(in, signing.certificateStorePassword().toCharArray());
+            } catch (Exception e) {
+                call.failure().log("Could not load the certificate store");
+                throw e;
+            }
+            call.log("Certificate store loaded");
+            return keyStore;
         }
-        return keyStore;
     }
 
     /** "other-user" -> OTHER_USER, and so on. */

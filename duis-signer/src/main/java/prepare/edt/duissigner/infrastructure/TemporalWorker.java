@@ -37,6 +37,7 @@ public class TemporalWorker {
     }
 
     void onStart(@Observes StartupEvent event) {
+        long startedAt = System.nanoTime();
         factory = WorkerFactory.newInstance(client);
         // The rate limit is for the whole task queue and is enforced by the Temporal Server (all replicas together).
         Worker worker = factory.newWorker(config.taskQueue(), WorkerOptions.newBuilder()
@@ -45,13 +46,13 @@ public class TemporalWorker {
         worker.registerActivitiesImplementations(new SignActivityImpl(signServiceRequest));
         factory.start();
 
-        try (var fields = LogFields.of(
-                "event.action", "worker-started",
+        try (var call = Interaction.outbound("edt.duisSignerReqGrpc", "worker-started").duration(System.nanoTime() - startedAt);
+                var fields = LogFields.of(
                 "temporal.target", config.target(),
                 "temporal.namespace", config.namespace(),
                 "temporal.task_queue", config.taskQueue(),
                 "edt.signing_rate_per_second", String.valueOf(config.signingRatePerSecond()))) {
-            LOG.info("Temporal worker started");
+            call.log("Temporal worker started");
         }
     }
 

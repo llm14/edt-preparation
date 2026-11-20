@@ -29,19 +29,30 @@ public final class Interaction implements AutoCloseable {
     private final long startedAt = System.nanoTime();
     private boolean failed;
     private Long durationNanos;
+    private boolean timed;
 
-    private Interaction(String edtInterface, String action, String direction) {
+    private Interaction(String edtInterface, String action, String direction, boolean timed) {
         this.fields = LogFields.of("event.action", action, "edt.interface", edtInterface, "network.direction", direction);
+        this.timed = timed;
     }
 
     /** A call this container makes. {@code edtInterface} is the interface ID of the architecture model. */
     public static Interaction outbound(String edtInterface, String action) {
-        return new Interaction(edtInterface, action, "outbound");
+        return new Interaction(edtInterface, action, "outbound", true);
     }
 
-    /** A call this container receives. */
+    /**
+     * A call this container receives. It has no duration unless {@link #timed()} or {@link #duration(long)} is used
+     * (workflow code, which is replayed, must not read the clock).
+     */
     public static Interaction inbound(String edtInterface, String action) {
-        return new Interaction(edtInterface, action, "inbound");
+        return new Interaction(edtInterface, action, "inbound", false);
+    }
+
+    /** Also writes event.duration, measured from the creation of this helper. */
+    public Interaction timed() {
+        timed = true;
+        return this;
     }
 
     /** Adds an identifier or result to the line. */
@@ -62,11 +73,20 @@ public final class Interaction implements AutoCloseable {
         return this;
     }
 
-    /** Writes the INFO line with the duration (the one set, or the time since creation) and the outcome. */
+    /** Writes the INFO line with the outcome and, if timed, the duration (the one set, or the time since creation). */
     public void log(String message) {
+        log(LOG, message);
+    }
+
+    /** The same on another logger of the same name, for workflow code: pass {@code Workflow.getLogger("edt.interaction")}. */
+    public void log(Logger logger, String message) {
         fields.add("event.outcome", failed ? "failure" : "success");
-        fields.add("event.duration", durationNanos != null ? durationNanos : System.nanoTime() - startedAt);
-        LOG.info(message);
+        if (durationNanos != null) {
+            fields.add("event.duration", durationNanos);
+        } else if (timed) {
+            fields.add("event.duration", System.nanoTime() - startedAt);
+        }
+        logger.info(message);
     }
 
     @Override

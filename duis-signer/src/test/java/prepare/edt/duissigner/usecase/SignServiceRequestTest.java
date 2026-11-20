@@ -48,13 +48,28 @@ class SignServiceRequestTest {
 
     final SignServiceRequest useCase = new SignServiceRequest(reader, policy, signer, audit::add);
 
+    /** The recorded events with the duration set to 0, so they can be compared with equals. */
+    List<AuditEvent> withoutDurations() {
+        return audit.stream().map(e -> new AuditEvent(e.requestId(), e.srv(), e.outcome(), e.role(), e.reason(), 0)).toList();
+    }
+
+    @Test
+    void every_decision_records_how_long_it_took() {
+        useCase.sign("4.1.1|" + OTHER_USER_ID + "|ESME");
+        useCase.sign("9.9.9|" + OTHER_USER_ID + "|ESME");
+        useCase.sign("bad");
+
+        assertEquals(3, audit.size());
+        assertTrue(audit.stream().allMatch(e -> e.durationNanos() >= 0), "a signed, a refused and an invalid request");
+    }
+
     @Test
     void approved_request_is_signed_and_audited() {
         SignResult result = useCase.sign("4.1.1|" + OTHER_USER_ID + "|ESME");
 
         assertEquals(new SignResult.Signed("REQ-1", UserRole.OTHER_USER,
                 "4.1.1|" + OTHER_USER_ID + "|ESME|signed-as-OTHER_USER"), result);
-        assertEquals(List.of(new AuditEvent("REQ-1", "4.1.1", Outcome.SIGNED, UserRole.OTHER_USER, null)), audit);
+        assertEquals(List.of(new AuditEvent("REQ-1", "4.1.1", Outcome.SIGNED, UserRole.OTHER_USER, null, 0)), withoutDurations());
     }
 
     @Test
@@ -64,7 +79,7 @@ class SignServiceRequestTest {
         String reason = "SRV 9.9.9 is not on the allowlist of any User Role";
         assertEquals(new SignResult.Refused("REQ-1", reason), result);
         assertTrue(signedAs.isEmpty(), "a refused request must never reach the signer");
-        assertEquals(List.of(new AuditEvent("REQ-1", "9.9.9", Outcome.REFUSED, null, reason)), audit);
+        assertEquals(List.of(new AuditEvent("REQ-1", "9.9.9", Outcome.REFUSED, null, reason, 0)), withoutDurations());
     }
 
     @Test
@@ -74,7 +89,7 @@ class SignServiceRequestTest {
         String reason = "invalid Service Request: not valid against the schema";
         assertEquals(new SignResult.Refused(null, reason), result);
         assertTrue(signedAs.isEmpty());
-        assertEquals(List.of(new AuditEvent(null, null, Outcome.REFUSED, null, reason)), audit);
+        assertEquals(List.of(new AuditEvent(null, null, Outcome.REFUSED, null, reason, 0)), withoutDurations());
     }
 
     @Test
