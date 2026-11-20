@@ -35,7 +35,7 @@ public class DspCertificateWiring {
                 "event.action", "dsp-certificate-loaded",
                 "edt.certificate_store", config.certificateStore(),
                 "edt.dsp_certificate_subject", certificate.getSubjectX500Principal().getName())) {
-            org.jboss.logging.Logger.getLogger(DspCertificateWiring.class).info("Trusted DSP certificate loaded");
+            org.slf4j.LoggerFactory.getLogger(DspCertificateWiring.class).info("Trusted DSP certificate loaded");
         }
         return new DspSignatureVerifier(certificate);
     }

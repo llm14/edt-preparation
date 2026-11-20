@@ -2,7 +2,7 @@ package prepare.edt.responselistener.infrastructure;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.jboss.logging.MDC;
+import org.slf4j.MDC;
 
 /**
  * Adds key-value fields to every log line written inside a try block, then removes them.
@@ -22,14 +22,14 @@ public final class LogFields implements AutoCloseable {
     private LogFields() {
     }
 
-    /** Takes pairs: key1, value1, key2, value2, ... */
-    public static LogFields of(String... keyValues) {
+    /** Takes pairs: key1, value1, key2, value2, ... Keys are text; a value of any type is written as its text. */
+    public static LogFields of(Object... keyValues) {
         if (keyValues.length % 2 != 0) {
             throw new IllegalArgumentException("LogFields.of needs key-value pairs");
         }
         LogFields fields = new LogFields();
         for (int i = 0; i < keyValues.length; i += 2) {
-            fields.add(keyValues[i], keyValues[i + 1]);
+            fields.add(String.valueOf(keyValues[i]), keyValues[i + 1]);
         }
         return fields;
     }

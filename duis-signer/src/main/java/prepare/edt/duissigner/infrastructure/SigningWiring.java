@@ -16,7 +16,8 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.duissigner.adapter.EcsAuditLog;
 import prepare.edt.duissigner.adapter.JcaXmlSigner;
 import prepare.edt.duissigner.adapter.XmlServiceRequestReader;
@@ -44,7 +45,7 @@ import software.amazon.awssdk.services.kms.KmsClient;
 @ApplicationScoped
 public class SigningWiring {
 
-    private static final Logger LOG = Logger.getLogger(SigningWiring.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SigningWiring.class);
 
     private KmsClient kmsClient;
 

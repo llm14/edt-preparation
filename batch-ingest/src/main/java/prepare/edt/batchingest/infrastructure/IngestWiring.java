@@ -7,7 +7,8 @@ import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Singleton;
 import java.net.URI;
 import java.security.Security;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.S3ManifestVerifier;
 import prepare.edt.batchingest.adapter.SqsManifestEventConsumer;
 import prepare.edt.batchingest.adapter.TemporalBatchStarter;
@@ -31,7 +32,7 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 @ApplicationScoped
 public class IngestWiring {
 
-    private static final Logger LOG = Logger.getLogger(IngestWiring.class);
+    private static final Logger LOG = LoggerFactory.getLogger(IngestWiring.class);
 
     @Produces
     @Singleton

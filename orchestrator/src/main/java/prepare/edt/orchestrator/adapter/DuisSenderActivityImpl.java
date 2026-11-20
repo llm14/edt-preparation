@@ -9,7 +9,8 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 import prepare.edt.orchestrator.infrastructure.LogFields;
@@ -30,7 +31,7 @@ public final class DuisSenderActivityImpl implements DuisSenderActivity {
 
     private static final String NAMESPACE = "urn:edt:placeholder:duis";
     static final String SIGNATURE_INVALID = "DspSignatureInvalid";
-    private static final Logger SECURITY = Logger.getLogger("edt.security");
+    private static final Logger SECURITY = LoggerFactory.getLogger("edt.security");
 
     private final URI gateway;
     private final HttpClient http;

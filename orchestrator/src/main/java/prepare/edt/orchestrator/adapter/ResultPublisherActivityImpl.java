@@ -2,14 +2,15 @@ package prepare.edt.orchestrator.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.usecase.EventPublisher;
 
 /** Turns each event into JSON and publishes it to its topic, keyed by device (a Batch result: by Batch). */
 public class ResultPublisherActivityImpl implements ResultPublisherActivity {
 
-    private static final Logger LOG = Logger.getLogger(ResultPublisherActivityImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ResultPublisherActivityImpl.class);
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final EventPublisher publisher;

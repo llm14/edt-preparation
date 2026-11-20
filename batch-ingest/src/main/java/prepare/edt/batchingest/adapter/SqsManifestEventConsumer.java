@@ -1,6 +1,7 @@
 package prepare.edt.batchingest.adapter;
 
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.ObjectCreatedEvent.UnreadableEventException;
 import prepare.edt.batchingest.entity.ManifestRef;
 import prepare.edt.batchingest.infrastructure.LogFields;
@@ -21,8 +22,8 @@ import software.amazon.awssdk.services.sqs.model.Message;
  */
 public final class SqsManifestEventConsumer {
 
-    private static final Logger LOG = Logger.getLogger(SqsManifestEventConsumer.class);
-    private static final Logger SECURITY = Logger.getLogger("edt.security");
+    private static final Logger LOG = LoggerFactory.getLogger(SqsManifestEventConsumer.class);
+    private static final Logger SECURITY = LoggerFactory.getLogger("edt.security");
 
     /** The longest long poll SQS allows: an empty queue costs one request every 20 seconds. */
     static final int WAIT_SECONDS = 20;
@@ -98,7 +99,7 @@ public final class SqsManifestEventConsumer {
     }
 
     private static void logBatch(String action, String text, ManifestRef manifest) {
-        try (var fields = LogFields.of("event.action", action, "edt.batch_workflow_id", manifest.batchWorkflowId())) {
+        try (var fields = LogFields.of("event.action", action, "edt.batch_id", manifest.batchWorkflowId())) {
             LOG.info(text);
         }
     }

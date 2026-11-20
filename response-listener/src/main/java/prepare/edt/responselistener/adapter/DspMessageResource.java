@@ -6,7 +6,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.responselistener.infrastructure.LogFields;
 import prepare.edt.responselistener.usecase.DspMessageReader.UnreadableMessageException;
 import prepare.edt.responselistener.usecase.DspSignatureCheck.InvalidDspSignatureException;
@@ -25,8 +26,8 @@ import prepare.edt.responselistener.usecase.WorkflowSignaller.SignallerUnavailab
 @Path("/duis/responses")
 public class DspMessageResource {
 
-    private static final Logger LOG = Logger.getLogger(DspMessageResource.class);
-    private static final Logger SECURITY = Logger.getLogger("edt.security");
+    private static final Logger LOG = LoggerFactory.getLogger(DspMessageResource.class);
+    private static final Logger SECURITY = LoggerFactory.getLogger("edt.security");
 
     private final RouteDspMessage routeDspMessage;
 

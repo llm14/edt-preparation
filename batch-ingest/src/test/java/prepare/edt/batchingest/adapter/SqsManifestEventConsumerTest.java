@@ -1,6 +1,7 @@
 package prepare.edt.batchingest.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -104,5 +105,22 @@ class SqsManifestEventConsumerTest {
 
         assertEquals(List.of(), started);
         assertEquals(List.of(), deleted);
+    }
+
+    @Test
+    void the_batch_lines_carry_edt_batch_id_and_not_the_old_name() {
+        try (LogCapture log = new LogCapture()) {
+            consumer(m -> Verdict.signedByDcc(), true).pollOnce();
+            consumer(m -> Verdict.signedByDcc(), false).pollOnce();
+
+            var lines = log.lines(SqsManifestEventConsumer.class).stream()
+                    .filter(l -> l.message().startsWith("Batch ")).toList();
+            assertEquals(2, lines.size(), "Batch started, and Batch already started");
+            for (var line : lines) {
+                assertEquals("batch-edt-manifests/sample.csv/v1", line.fields().get("edt.batch_id"));
+                assertFalse(line.fields().containsKey("edt.batch_workflow_id"));
+            }
+            assertEquals("Batch started", lines.getFirst().message());
+        }
     }
 }

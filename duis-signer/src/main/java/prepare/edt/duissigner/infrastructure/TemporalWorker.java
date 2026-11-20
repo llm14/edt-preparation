@@ -9,7 +9,8 @@ import io.temporal.worker.WorkerOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.util.concurrent.TimeUnit;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.duissigner.adapter.SignActivityImpl;
 import prepare.edt.duissigner.usecase.SignServiceRequest;
 
@@ -22,7 +23,7 @@ import prepare.edt.duissigner.usecase.SignServiceRequest;
 @ApplicationScoped
 public class TemporalWorker {
 
-    private static final Logger LOG = Logger.getLogger(TemporalWorker.class);
+    private static final Logger LOG = LoggerFactory.getLogger(TemporalWorker.class);
 
     private final WorkflowClient client;
     private final TemporalConfig config;

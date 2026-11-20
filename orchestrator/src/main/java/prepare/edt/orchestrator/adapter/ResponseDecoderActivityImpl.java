@@ -2,7 +2,8 @@ package prepare.edt.orchestrator.adapter;
 
 import io.temporal.activity.Activity;
 import io.temporal.failure.ApplicationFailure;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.orchestrator.entity.Facts;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.usecase.ResponseDecoder;
@@ -14,7 +15,7 @@ import prepare.edt.orchestrator.usecase.ResponseDecoder;
 public class ResponseDecoderActivityImpl implements ResponseDecoderActivity {
 
     static final String NOT_DECODABLE = "ResponseNotDecodable";
-    private static final Logger LOG = Logger.getLogger(ResponseDecoderActivityImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ResponseDecoderActivityImpl.class);
 
     private final ResponseDecoder decoder;
 

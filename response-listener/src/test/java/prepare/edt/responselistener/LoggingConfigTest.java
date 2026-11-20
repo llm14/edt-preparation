@@ -41,4 +41,9 @@ class LoggingConfigTest {
         assertEquals("false", PROPS.getProperty("%dev.quarkus.log.console.json.enabled"));
         assertEquals("false", PROPS.getProperty("%test.quarkus.log.console.json.enabled"));
     }
+
+    @Test
+    void interactionLoggerHasItsOwnLevel() {
+        assertEquals("INFO", PROPS.getProperty("quarkus.log.category.\"edt.interaction\".level"));
+    }
 }

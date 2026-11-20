@@ -2,7 +2,8 @@ package prepare.edt.orchestrator.adapter;
 
 import io.temporal.activity.Activity;
 import io.temporal.failure.ApplicationFailure;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.orchestrator.entity.ManifestLocation;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.usecase.ReadManifestPage;
@@ -17,7 +18,7 @@ import prepare.edt.orchestrator.usecase.ReadManifestPage.NotAManifestException;
 public class ManifestReaderActivityImpl implements ManifestReaderActivity {
 
     static final String NOT_A_MANIFEST = "NotAManifest";
-    private static final Logger LOG = Logger.getLogger(ManifestReaderActivityImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ManifestReaderActivityImpl.class);
 
     private final ReadManifestPage readManifestPage;
 

@@ -1,6 +1,7 @@
 package prepare.edt.duissigner.adapter;
 
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.duissigner.infrastructure.LogFields;
 import prepare.edt.duissigner.usecase.AuditLog;
 
@@ -13,7 +14,7 @@ import prepare.edt.duissigner.usecase.AuditLog;
  */
 public final class EcsAuditLog implements AuditLog {
 
-    private static final Logger AUDIT = Logger.getLogger("edt.audit");
+    private static final Logger AUDIT = LoggerFactory.getLogger("edt.audit");
 
     @Override
     public void record(AuditEvent event) {

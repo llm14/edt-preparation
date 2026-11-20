@@ -43,6 +43,12 @@ class ArchitectureTest {
             .should().dependOnClassesThat()
             .resideInAnyPackage(FRAMEWORKS);
 
+    /** One logging API: SLF4J. Nothing may use JBoss Logging directly (openspec change improve-logging). */
+    @ArchTest
+    static final ArchRule logging_goes_through_slf4j_only = noClasses()
+            .should().dependOnClassesThat()
+            .resideInAPackage("org.jboss.logging..");
+
     /** Guard: ArchUnit can read our Java 25 classes, so the rules above check real code. */
     @Test
     void archunit_reads_the_application_classes() {

@@ -5,7 +5,8 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.time.Duration;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.SqsManifestEventConsumer;
 
 /**
@@ -17,7 +18,7 @@ import prepare.edt.batchingest.adapter.SqsManifestEventConsumer;
 @ApplicationScoped
 public class ManifestEventPolling {
 
-    private static final Logger LOG = Logger.getLogger(ManifestEventPolling.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ManifestEventPolling.class);
     private static final Duration PAUSE_AFTER_ERROR = Duration.ofSeconds(5);
 
     private final SqsManifestEventConsumer consumer;

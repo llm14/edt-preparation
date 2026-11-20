@@ -2,7 +2,7 @@ package prepare.edt.orchestrator.infrastructure;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.jboss.logging.MDC;
+import org.slf4j.MDC;
 
 /**
  * Adds key-value fields to every log line written inside a try block, then removes them.
