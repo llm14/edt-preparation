@@ -5,7 +5,8 @@ import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.time.Duration;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.SqsManifestEventConsumer;
 
 /**
@@ -17,7 +18,7 @@ import prepare.edt.batchingest.adapter.SqsManifestEventConsumer;
 @ApplicationScoped
 public class ManifestEventPolling {
 
-    private static final Logger LOG = Logger.getLogger(ManifestEventPolling.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ManifestEventPolling.class);
     private static final Duration PAUSE_AFTER_ERROR = Duration.ofSeconds(5);
 
     private final SqsManifestEventConsumer consumer;
@@ -51,9 +52,9 @@ public class ManifestEventPolling {
                 if (!running) {
                     break;
                 }
-                try (var fields = LogFields.of("event.action", "manifest-poll-failed", "event.outcome", "failure",
-                        "error.message", String.valueOf(e.getMessage()))) {
-                    LOG.warn("Cannot poll the Manifest Events queue; trying again shortly");
+                // A technical failure: the exception is passed, so the line has error.type, error.message and the stack.
+                try (var fields = LogFields.of("event.action", "manifest-poll-failed", "event.outcome", "failure")) {
+                    LOG.warn("Cannot poll the Manifest Events queue; trying again shortly", e);
                 }
                 try {
                     Thread.sleep(PAUSE_AFTER_ERROR);

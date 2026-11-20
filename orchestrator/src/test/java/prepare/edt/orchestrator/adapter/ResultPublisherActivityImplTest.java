@@ -34,6 +34,26 @@ class ResultPublisherActivityImplTest {
     }
 
     @Test
+    void each_publish_is_one_interaction_line_with_the_topic_and_a_duration() {
+        try (LogCapture log = new LogCapture()) {
+            publisher.publishDeviceResult(new ResultPublisherActivity.DeviceResult("batch-1/row-3", "t", "batch-1",
+                    "00-DB-12-34-56-78-90-A3", 3, "flow-3", "NO_RESPONSE"));
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size());
+            var fields = lines.get(0).fields();
+            assertEquals("result-published", fields.get("event.action"));
+            assertEquals("edt.orchestratorReqKafka", fields.get("edt.interface"));
+            assertEquals("outbound", fields.get("network.direction"));
+            assertEquals("success", fields.get("event.outcome"));
+            assertEquals("edt.device-results", fields.get("edt.kafka.topic"));
+            assertEquals("batch-1/row-3", fields.get("edt.event_id"));
+            assertEquals("DeviceResult", fields.get("edt.event_type"));
+            assertEquals(true, Long.parseLong(fields.get("event.duration")) >= 0);
+        }
+    }
+
+    @Test
     void a_step_carries_the_facts_and_a_batch_result_is_keyed_by_batch() {
         publisher.publishFlowStep(new ResultPublisherActivity.FlowStep("batch-1/row-1/step-1", "t", "batch-1",
                 "00-DB-12-34-56-78-90-A0", 1, 1, "4.1.1", "R", "RESPONDED", null,

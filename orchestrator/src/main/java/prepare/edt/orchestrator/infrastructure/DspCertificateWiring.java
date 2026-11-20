@@ -22,6 +22,7 @@ public class DspCertificateWiring {
     @Produces
     @Singleton
     DspSignatureVerifier dspSignatureVerifier(DspConfig config) throws Exception {
+        long startedAt = System.nanoTime();
         // JCA: a KeyStore of type PKCS12 from the default provider. The store holds certificates only.
         KeyStore store = KeyStore.getInstance("PKCS12");
         try (InputStream in = Files.newInputStream(Path.of(config.certificateStore()))) {
@@ -31,11 +32,11 @@ public class DspCertificateWiring {
             throw new IllegalStateException("no DSP certificate '" + config.certificateAlias() + "' in "
                     + config.certificateStore());
         }
-        try (var fields = LogFields.of(
-                "event.action", "dsp-certificate-loaded",
-                "edt.certificate_store", config.certificateStore(),
-                "edt.dsp_certificate_subject", certificate.getSubjectX500Principal().getName())) {
-            org.jboss.logging.Logger.getLogger(DspCertificateWiring.class).info("Trusted DSP certificate loaded");
+        try (var call = Interaction.outbound("edt.orchestratorReqFile", "dsp-certificate-loaded")
+                .duration(System.nanoTime() - startedAt)
+                .with("edt.certificate_store", config.certificateStore())
+                .with("edt.dsp_certificate_subject", certificate.getSubjectX500Principal().getName())) {
+            call.log("Trusted DSP certificate loaded");
         }
         return new DspSignatureVerifier(certificate);
     }

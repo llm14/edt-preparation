@@ -108,11 +108,64 @@ deploy/check-log-shape.sh
 ```
 
 It reads the logs of the four apps and fails (exit 1) if a line is not one JSON object, lacks `@timestamp`, `log.level`,
-`message`, `service.name` or `ecs.version`, has an `mdc` object, or repeats a key. For each app it prints how many lines it read
+`message`, `service.name` or `ecs.version`, has an `mdc` object, repeats a key, or is on `edt.interaction` and lacks `event.action`, `event.outcome`, `edt.interface` or `network.direction`. For each app it prints how many lines it read
 and, for each kind of problem, how many lines have it and the first one. `EDT_LOG_TAIL` sets how many lines are read per app
 (default 2000), `EDT_NAMESPACE` the namespace (default `edt`). Run it after any change to logging: the unit tests check the
 settings, this checks what the packaged apps really write.
 - Temporal workflow code needs its own logger (`Workflow.getLogger`), because workflows are replayed. Comes later.
+
+#### One line for each boundary crossing: the logger `edt.interaction`
+
+Each time a container calls another system, or is called by one, through an interface of the architecture model, it writes one
+INFO line on the logger `edt.interaction` (`log.logger` in the JSON). Searching that one logger shows everything a container
+exchanged with the outside. The `Interaction` helper, next to `LogFields` in each app, writes the line:
+
+```java
+try (var call = Interaction.outbound("edt.orchestratorReqHttp", "service-request-sent")
+        .with("edt.request_id", requestId)) {
+    // ... make the call ...
+    call.log("Service Request posted to the DSP HTTPS Gateway");
+}
+```
+
+Every interaction line has these keys:
+
+| Key | Value |
+|---|---|
+| `event.action` | what happened, for example `manifest-read`, `service-request-sent` |
+| `event.outcome` | `success` or `failure` |
+| `edt.interface` | the ID of the interface in the model, for example `edt.orchestratorReqHttp` |
+| `network.direction` | `outbound` for a call the container makes, `inbound` for a call it receives |
+| `event.duration` | nanoseconds, for a call the container makes (and for the Response Listener's handling of a message) |
+
+Other keys are identifiers and results only (`edt.batch_id`, `edt.request_id`, `http.response.status_code`, sizes): never the body
+of a Service Request or Response, a Manifest row, a signature, a key or the content of a certificate. A poll of the queue that
+returns nothing writes no line. The audit line of the DUIS Signer stays on `edt.audit` (it also has `edt.interface` and
+`event.duration`), and security alerts stay on `edt.security`: both must survive turning `edt.interaction` down.
+
+To turn the interaction lines down without a code change, set the level in `application.properties` (or with the environment
+variable `QUARKUS_LOG_CATEGORY__EDT_INTERACTION__LEVEL=WARN`). The default, INFO, is set in each app and checked by `LoggingConfigTest`.
+
+The ID of a Batch is `edt.batch_id` in every container (Batch Ingest used to write `edt.batch_workflow_id`).
+
+**Exceptions.** A line that reports an unexpected technical failure passes the exception to the logger, so the JSON has
+`error.type`, `error.message` and `error.stack_trace` (`manifest-poll-failed`, `manifest-ingest-failed`,
+`dsp-message-not-delivered`). A line that reports an expected rejection of outside input keeps the reason in `error.message` and
+has no stack trace, because an outsider can cause it at will (`manifest-event-unreadable`, `manifest-signature-invalid`,
+`manifest-row-invalid`, `response-not-decodable`, `dsp-signature-invalid`, `dsp-message-unreadable`).
+
+**One logging API.** All code logs through SLF4J (`org.slf4j.Logger`, `org.slf4j.MDC`); workflows use `Workflow.getLogger`. Each
+app's `ArchitectureTest` fails if a class depends on `org.jboss.logging`.
+
+Check the interaction lines on the cluster, after a one-device Manifest has been processed:
+
+```bash
+deploy/check-log-shape.sh        # every edt.interaction line has the four keys
+deploy/check-interactions.sh     # every interface a one-device run uses has a line, per container
+deploy/test-check-logs.sh        # tests both scripts against made-up logs (no cluster)
+```
+
+`EDT_LOG_FIXTURE_DIR=<dir>` makes the first two read `<dir>/<app>.log` instead of the cluster.
 
 ### Step 5: Clean Architecture packages and the architecture test
 
@@ -819,7 +872,7 @@ S3, KMS or Temporal unreachable, unreadable message -> leave it: SQS gives it ag
 |---|---|
 | `entity/ManifestRef.java` | Bucket, key, version; `batchWorkflowId()`. |
 | `usecase/IngestManifest.java` | Verify first, then start; outcome Started, AlreadyStarted or Rejected. Ports `ManifestVerifier`, `BatchStarter`. |
-| `adapter/SqsManifestEventConsumer.java` | Long poll, logs `manifest-received` and the outcome, deletes only on an outcome. A rejection is a security event on `edt.security` (`manifest-signature-invalid`). |
+| `adapter/SqsManifestEventConsumer.java` | Long poll, logs `manifest-received` and `sqs-message-deleted` on `edt.interaction`, deletes only on an outcome. A rejection is a security event on `edt.security` (`manifest-signature-invalid`). |
 | `adapter/S3ManifestVerifier.java` | Tag + streamed object into a JCA `Signature`. Missing tag, not base64, malformed or wrong signature: invalid. |
 | `adapter/kms/` | Batch Ingest's own `EDT-KMS` provider: `SHA256withECDSA` whose verify calls **KMS Verify**. `KMSInvalidSignatureException` means `false`. Any other KMS error is a `ProviderException`: not a verdict, the message comes back. It refuses to sign. |
 | `adapter/TemporalBatchStarter.java` | Untyped stub, type `Batch`, input `BatchInput(bucket, key, versionId)`. `WorkflowExecutionAlreadyStarted` means already started. |

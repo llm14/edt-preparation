@@ -7,10 +7,12 @@
 #   - is not one JSON object,
 #   - lacks @timestamp, log.level, message, service.name or ecs.version,
 #   - has an "mdc" object (application fields must be top-level),
-#   - repeats a key (found while parsing; a JSON parser would silently keep the last value).
+#   - repeats a key (found while parsing; a JSON parser would silently keep the last value),
+#   - is on the logger edt.interaction and lacks event.action, event.outcome, edt.interface or network.direction.
 # For each app it prints the number of lines read and, for each kind of problem, how many lines have it and the first one.
 # Needs the cluster running (deploy/edt.sh up), kubectl and python. Exits 1 on any problem, 2 if there is nothing to read.
-# Settings: EDT_NAMESPACE (default edt), EDT_LOG_TAIL (lines read per app, default 2000).
+# Settings: EDT_NAMESPACE (default edt), EDT_LOG_TAIL (lines read per app, default 2000),
+# EDT_LOG_FIXTURE_DIR (read <dir>/<app>.log for each app instead of the cluster; used to test this script).
 set -euo pipefail
 
 # Git Bash on Windows would rewrite arguments that look like Unix paths.
@@ -20,10 +22,12 @@ NAMESPACE="${EDT_NAMESPACE:-edt}"
 TAIL="${EDT_LOG_TAIL:-2000}"
 APPS="batch-ingest orchestrator duis-signer response-listener"
 
-APPS="$APPS" NAMESPACE="$NAMESPACE" TAIL="$TAIL" python - <<'PY'
+APPS="$APPS" NAMESPACE="$NAMESPACE" TAIL="$TAIL" FIXTURE_DIR="${EDT_LOG_FIXTURE_DIR:-}" python - <<'PY'
 import json, os, subprocess, sys
 
 REQUIRED = ["@timestamp", "log.level", "message", "service.name", "ecs.version"]
+INTERACTION_LOGGER = "edt.interaction"
+INTERACTION_KEYS = ["event.action", "event.outcome", "edt.interface", "network.direction"]
 
 def no_duplicates(pairs):
     seen, dup = set(), []
@@ -48,6 +52,10 @@ def problems_of(line):
     missing = [k for k in REQUIRED if k not in obj]
     if missing:
         out.append(("missing keys", ", ".join(missing)))
+    if obj.get("log.logger") == INTERACTION_LOGGER:
+        absent = [k for k in INTERACTION_KEYS if k not in obj]
+        if absent:
+            out.append(("interaction line lacks keys", ", ".join(absent)))
     if "mdc" in obj:
         out.append(("has an mdc object", ", ".join(sorted(obj["mdc"])) if isinstance(obj["mdc"], dict) else ""))
     if "\0duplicates" in obj:
@@ -57,12 +65,21 @@ def problems_of(line):
 total_problems = 0
 empty = False
 for app in os.environ["APPS"].split():
-    run = subprocess.run(["kubectl", "-n", os.environ["NAMESPACE"], "logs", f"deployment/{app}", f"--tail={os.environ['TAIL']}"],
-                         capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if run.returncode != 0:
-        print(f"{app}: cannot read logs from namespace {os.environ['NAMESPACE']} (is the cluster up?): {run.stderr.strip()[:300]}")
-        sys.exit(2)
-    lines = [l for l in run.stdout.splitlines() if l.strip()]
+    if os.environ["FIXTURE_DIR"]:
+        path = os.path.join(os.environ["FIXTURE_DIR"], f"{app}.log")
+        if not os.path.exists(path):
+            print(f"{app}: no fixture file {path}")
+            sys.exit(2)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    else:
+        run = subprocess.run(["kubectl", "-n", os.environ["NAMESPACE"], "logs", f"deployment/{app}", f"--tail={os.environ['TAIL']}"],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if run.returncode != 0:
+            print(f"{app}: cannot read logs from namespace {os.environ['NAMESPACE']} (is the cluster up?): {run.stderr.strip()[:300]}")
+            sys.exit(2)
+        text = run.stdout
+    lines = [l for l in text.splitlines() if l.strip()]
     if not lines:
         print(f"{app}: no log lines to check")
         empty = True

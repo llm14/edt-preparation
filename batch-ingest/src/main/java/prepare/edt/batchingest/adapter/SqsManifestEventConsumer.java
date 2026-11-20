@@ -1,8 +1,10 @@
 package prepare.edt.batchingest.adapter;
 
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.ObjectCreatedEvent.UnreadableEventException;
 import prepare.edt.batchingest.entity.ManifestRef;
+import prepare.edt.batchingest.infrastructure.Interaction;
 import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.IngestManifest;
 import prepare.edt.batchingest.usecase.IngestManifest.Outcome;
@@ -21,11 +23,14 @@ import software.amazon.awssdk.services.sqs.model.Message;
  */
 public final class SqsManifestEventConsumer {
 
-    private static final Logger LOG = Logger.getLogger(SqsManifestEventConsumer.class);
-    private static final Logger SECURITY = Logger.getLogger("edt.security");
+    private static final Logger LOG = LoggerFactory.getLogger(SqsManifestEventConsumer.class);
+    private static final Logger SECURITY = LoggerFactory.getLogger("edt.security");
 
     /** The longest long poll SQS allows: an empty queue costs one request every 20 seconds. */
     static final int WAIT_SECONDS = 20;
+
+    /** Model interface: Manifest Event Consumer to the Manifest Events queue (receive and delete). */
+    static final String SQS_INTERFACE = "edt.batchIngestReqSqs";
 
     private final SqsClient sqs;
     private final String queueName;
@@ -66,40 +71,39 @@ public final class SqsManifestEventConsumer {
 
         try (var fields = LogFields.of("edt.manifest.bucket", manifest.bucket(), "edt.manifest.key", manifest.key(),
                 "edt.manifest.version_id", manifest.versionId(), "edt.sqs_message_id", message.messageId())) {
-            try (var received = LogFields.of("event.action", "manifest-received")) {
-                LOG.info("Manifest received");
+            // Inbound, so no duration: the time of the long poll is waiting for a message, not work.
+            try (var received = Interaction.inbound(SQS_INTERFACE, "manifest-received")) {
+                received.log("Manifest received");
             }
 
             Outcome outcome;
             try {
                 outcome = ingestManifest.ingest(manifest);
             } catch (RuntimeException e) {
-                try (var failed = LogFields.of("event.action", "manifest-ingest-failed", "event.outcome", "failure",
-                        "error.type", e.getClass().getName(), "error.message", String.valueOf(e.getMessage()))) {
-                    LOG.error("Could not ingest the Manifest: left on the queue, it will come back");
+                // A technical failure: the exception is passed, so the line has error.type, error.message and the stack.
+                try (var failed = LogFields.of("event.action", "manifest-ingest-failed", "event.outcome", "failure")) {
+                    LOG.error("Could not ingest the Manifest: left on the queue, it will come back", e);
                 }
                 return;
             }
 
-            switch (outcome) {
-                case Outcome.Started started -> logBatch("batch-started", "Batch started", manifest);
-                case Outcome.AlreadyStarted already ->
-                        logBatch("batch-already-started", "Batch already started: duplicate message", manifest);
-                case Outcome.Rejected rejected -> {
-                    try (var security = LogFields.of("event.kind", "alert", "event.category", "intrusion_detection",
-                            "event.action", "manifest-signature-invalid", "event.outcome", "failure",
-                            "error.message", rejected.reason())) {
-                        SECURITY.warn("Manifest rejected: its DCC signature is not valid");
-                    }
+            // Started and AlreadyStarted are logged by the Batch Starter, at the call to Temporal.
+            if (outcome instanceof Outcome.Rejected rejected) {
+                try (var security = LogFields.of("event.kind", "alert", "event.category", "intrusion_detection",
+                        "event.action", "manifest-signature-invalid", "event.outcome", "failure",
+                        "error.message", rejected.reason())) {
+                    SECURITY.warn("Manifest rejected: its DCC signature is not valid");
                 }
             }
-            sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(message.receiptHandle()));
-        }
-    }
-
-    private static void logBatch(String action, String text, ManifestRef manifest) {
-        try (var fields = LogFields.of("event.action", action, "edt.batch_workflow_id", manifest.batchWorkflowId())) {
-            LOG.info(text);
+            try (var deleted = Interaction.outbound(SQS_INTERFACE, "sqs-message-deleted")) {
+                try {
+                    sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(message.receiptHandle()));
+                } catch (RuntimeException e) {
+                    deleted.failure().log("Could not delete the message from the Manifest Events queue");
+                    throw e;
+                }
+                deleted.log("Message deleted from the Manifest Events queue");
+            }
         }
     }
 }

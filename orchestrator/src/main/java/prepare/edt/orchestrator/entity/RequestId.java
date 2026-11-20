@@ -40,6 +40,12 @@ public record RequestId(String originatorId, String targetId, long counter) {
         return "service-request-" + requestId;
     }
 
+    /** The Request ID in a Service Request workflow ID: the reverse of {@link #workflowId(String)}. */
+    public static String requestIdOf(String workflowId) {
+        String prefix = workflowId("");
+        return workflowId.startsWith(prefix) ? workflowId.substring(prefix.length()) : workflowId;
+    }
+
     public String workflowId() {
         return workflowId(value());
     }

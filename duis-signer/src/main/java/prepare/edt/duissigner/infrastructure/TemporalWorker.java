@@ -9,7 +9,8 @@ import io.temporal.worker.WorkerOptions;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import java.util.concurrent.TimeUnit;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.duissigner.adapter.SignActivityImpl;
 import prepare.edt.duissigner.usecase.SignServiceRequest;
 
@@ -22,7 +23,7 @@ import prepare.edt.duissigner.usecase.SignServiceRequest;
 @ApplicationScoped
 public class TemporalWorker {
 
-    private static final Logger LOG = Logger.getLogger(TemporalWorker.class);
+    private static final Logger LOG = LoggerFactory.getLogger(TemporalWorker.class);
 
     private final WorkflowClient client;
     private final TemporalConfig config;
@@ -36,6 +37,7 @@ public class TemporalWorker {
     }
 
     void onStart(@Observes StartupEvent event) {
+        long startedAt = System.nanoTime();
         factory = WorkerFactory.newInstance(client);
         // The rate limit is for the whole task queue and is enforced by the Temporal Server (all replicas together).
         Worker worker = factory.newWorker(config.taskQueue(), WorkerOptions.newBuilder()
@@ -44,13 +46,13 @@ public class TemporalWorker {
         worker.registerActivitiesImplementations(new SignActivityImpl(signServiceRequest));
         factory.start();
 
-        try (var fields = LogFields.of(
-                "event.action", "worker-started",
+        try (var call = Interaction.outbound("edt.duisSignerReqGrpc", "worker-started").duration(System.nanoTime() - startedAt);
+                var fields = LogFields.of(
                 "temporal.target", config.target(),
                 "temporal.namespace", config.namespace(),
                 "temporal.task_queue", config.taskQueue(),
                 "edt.signing_rate_per_second", String.valueOf(config.signingRatePerSecond()))) {
-            LOG.info("Temporal worker started");
+            call.log("Temporal worker started");
         }
     }
 

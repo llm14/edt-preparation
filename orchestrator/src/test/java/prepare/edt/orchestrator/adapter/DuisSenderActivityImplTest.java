@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import prepare.edt.orchestrator.entity.RequestId;
 
 /**
  * The sender against a fake DSP HTTPS Gateway (the JDK's own HTTP server, on a free local port).
@@ -103,10 +104,84 @@ class DuisSenderActivityImplTest {
     }
 
     @Test
+    void a_bad_dsp_signature_alert_keeps_error_message_as_a_field_and_has_no_exception() throws Exception {
+        answer.set(sync("I0", "accepted for delivery").replace("<ResponseCode>I0<", "<ResponseCode>I99<"));
+        try (LogCapture log = new LogCapture()) {
+            assertThrows(ApplicationFailure.class, () -> sender.send("<ServiceRequest/>", "A:B:1"));
+
+            var line = log.lines("edt.security").get(0);
+            assertEquals("dsp-signature-invalid", line.fields().get("event.action"));
+            assertTrue(line.fields().containsKey("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
+    @Test
     void an_unsigned_response_is_not_trusted() {
         answer.set(unsignedSync("I0", "accepted for delivery"));
 
         assertThrows(ApplicationFailure.class, () -> sender.send("<ServiceRequest/>"));
+    }
+
+    @Test
+    void a_successful_post_is_one_interaction_line_with_status_size_duration_and_request_id_but_no_xml() throws Exception {
+        answer.set(sync("I0", "accepted for delivery"));
+        String request = "<ServiceRequest>secret-body</ServiceRequest>";
+        try (LogCapture log = new LogCapture()) {
+            sender.send(request, "A:B:1");
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size());
+            var fields = lines.get(0).fields();
+            assertEquals("service-request-sent", fields.get("event.action"));
+            assertEquals("edt.orchestratorReqHttp", fields.get("edt.interface"));
+            assertEquals("outbound", fields.get("network.direction"));
+            assertEquals("success", fields.get("event.outcome"));
+            assertEquals("200", fields.get("http.response.status_code"));
+            assertEquals(String.valueOf(request.length()), fields.get("http.request.body.bytes"));
+            assertEquals("A:B:1", fields.get("edt.request_id"));
+            assertEquals("localhost", fields.get("destination.address"));
+            assertTrue(Long.parseLong(fields.get("event.duration")) >= 0);
+            assertFalse(lines.get(0).message().contains("<"));
+            assertFalse(fields.values().stream().anyMatch(v -> v.contains("secret-body") || v.contains("<")));
+        }
+    }
+
+    @Test
+    void a_refused_connection_is_a_failure_line_without_a_status_and_without_a_stack() {
+        gateway.stop(0);
+        try (LogCapture log = new LogCapture()) {
+            assertThrows(IllegalStateException.class, () -> sender.send("<ServiceRequest/>", "A:B:1"));
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size(), "one line for the attempt");
+            assertEquals("failure", lines.get(0).fields().get("event.outcome"));
+            assertFalse(lines.get(0).fields().containsKey("http.response.status_code"));
+            assertEquals("A:B:1", lines.get(0).fields().get("edt.request_id"));
+            assertEquals(null, lines.get(0).thrown());
+        }
+    }
+
+    @Test
+    void an_http_500_is_a_failure_line_with_the_status() {
+        answer.set("gateway error");
+        status.set(500);
+        try (LogCapture log = new LogCapture()) {
+            assertThrows(IllegalStateException.class, () -> sender.send("<ServiceRequest/>", "A:B:1"));
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(1, lines.size());
+            assertEquals("failure", lines.get(0).fields().get("event.outcome"));
+            assertEquals("500", lines.get(0).fields().get("http.response.status_code"));
+            assertEquals(null, lines.get(0).thrown());
+        }
+    }
+
+    @Test
+    void the_request_id_taken_from_the_workflow_id_is_the_one_the_workflow_id_was_built_from() {
+        String requestId = RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value();
+
+        assertEquals(requestId, RequestId.requestIdOf(RequestId.workflowId(requestId)));
     }
 
     /** A synchronous response signed by the test DSP. */

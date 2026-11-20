@@ -1,13 +1,17 @@
 package prepare.edt.batchingest.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.Signature;
 import java.security.spec.ECGenParameterSpec;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import prepare.edt.batchingest.entity.ManifestRef;
 import prepare.edt.batchingest.usecase.ManifestVerifier.Verdict;
@@ -62,6 +66,70 @@ class S3ManifestVerifierTest {
         String garbage = Base64.getEncoder().encodeToString("hello".getBytes(StandardCharsets.US_ASCII));
 
         assertEquals(Verdict.invalid("signature is malformed"), verify(uploaded(CSV, garbage)));
+    }
+
+    @Test
+    void a_valid_manifest_writes_a_read_line_and_a_signature_line() throws Exception {
+        String signature = sign(CSV);
+        try (LogCapture log = new LogCapture()) {
+            verify(uploaded(CSV, signature));
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(List.of("manifest-read", "manifest-signature-checked"),
+                    lines.stream().map(l -> l.fields().get("event.action")).toList());
+            var read = lines.get(0).fields();
+            assertEquals("edt.batchIngestReqS3", read.get("edt.interface"));
+            assertEquals(String.valueOf(CSV.length), read.get("edt.manifest.bytes_read"));
+            assertEquals("edt-manifests", read.get("edt.manifest.bucket"));
+            var check = lines.get(1).fields();
+            assertEquals("edt.batchIngestReqKms", check.get("edt.interface"));
+            assertEquals("SunEC", check.get("edt.signature_provider"));
+            for (var line : lines) {
+                assertEquals("success", line.fields().get("event.outcome"));
+                assertEquals("outbound", line.fields().get("network.direction"));
+                assertTrue(Long.parseLong(line.fields().get("event.duration")) >= 0);
+            }
+            assertNoSecrets(lines, signature);
+        }
+    }
+
+    @Test
+    void an_invalid_manifest_still_writes_both_lines_and_the_signature_line_is_a_failure() throws Exception {
+        byte[] changed = new String(CSV, StandardCharsets.UTF_8).replace("A0", "A9").getBytes(StandardCharsets.UTF_8);
+        String signature = sign(CSV);
+        try (LogCapture log = new LogCapture()) {
+            verify(uploaded(changed, signature));
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(List.of("manifest-read", "manifest-signature-checked"),
+                    lines.stream().map(l -> l.fields().get("event.action")).toList());
+            assertEquals("success", lines.get(0).fields().get("event.outcome"));
+            assertEquals("failure", lines.get(1).fields().get("event.outcome"));
+            assertNoSecrets(lines, signature);
+        }
+    }
+
+    @Test
+    void a_manifest_without_a_signature_tag_is_a_failure_on_the_signature_line() {
+        try (LogCapture log = new LogCapture()) {
+            verify(uploaded(CSV, null));
+
+            var last = log.lines("edt.interaction").getLast();
+            assertEquals("manifest-signature-checked", last.fields().get("event.action"));
+            assertEquals("failure", last.fields().get("event.outcome"));
+        }
+    }
+
+    /** Neither the signature value nor any part of the Manifest is in a line (message or field). */
+    static void assertNoSecrets(List<LogCapture.Line> lines, String signature) {
+        for (var line : lines) {
+            var all = new ArrayList<>(line.fields().values());
+            all.add(line.message());
+            for (String value : all) {
+                assertFalse(value.contains(signature), "the signature is in " + line);
+                assertFalse(value.contains("00-DB-12-34"), "Manifest content is in " + line);
+            }
+        }
     }
 
     /** What DCC does (manifest-upload in dcc-tools does it with KMS): ECDSA over the SHA-256 of the file. */

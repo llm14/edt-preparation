@@ -9,6 +9,7 @@ import io.temporal.workflow.Workflow;
 import io.temporal.workflow.WorkflowInterface;
 import io.temporal.workflow.WorkflowMethod;
 import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,5 +83,27 @@ class TemporalBatchStarterTest {
     void a_new_version_of_the_same_file_is_a_new_batch() {
         assertTrue(starter.start(new ManifestRef("edt-manifests", "long.csv", "v1")));
         assertTrue(starter.start(new ManifestRef("edt-manifests", "long.csv", "v2")));
+    }
+
+    @Test
+    void a_new_batch_and_a_duplicate_each_write_one_interaction_line_with_the_batch_id() {
+        var manifest = new ManifestRef("edt-manifests", "long.csv", "v1");
+        try (LogCapture log = new LogCapture()) {
+            starter.start(manifest);
+            starter.start(manifest);
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(List.of("batch-started", "batch-already-started"),
+                    lines.stream().map(l -> l.fields().get("event.action")).toList());
+            for (var line : lines) {
+                assertEquals(manifest.batchWorkflowId(), line.fields().get("edt.batch_id"));
+                assertFalse(line.fields().containsKey("edt.batch_workflow_id"));
+                assertEquals("orchestrator", line.fields().get("edt.temporal.task_queue"));
+                assertEquals("edt.batchIngestReqGrpc", line.fields().get("edt.interface"));
+                assertEquals("outbound", line.fields().get("network.direction"));
+                assertEquals("success", line.fields().get("event.outcome"));
+                assertTrue(Long.parseLong(line.fields().get("event.duration")) >= 0);
+            }
+        }
     }
 }

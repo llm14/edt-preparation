@@ -2,8 +2,10 @@ package prepare.edt.orchestrator.adapter;
 
 import io.temporal.activity.Activity;
 import io.temporal.failure.ApplicationFailure;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import prepare.edt.orchestrator.entity.ManifestLocation;
+import prepare.edt.orchestrator.infrastructure.Interaction;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.usecase.ReadManifestPage;
 import prepare.edt.orchestrator.usecase.ReadManifestPage.ManifestPage;
@@ -17,7 +19,7 @@ import prepare.edt.orchestrator.usecase.ReadManifestPage.NotAManifestException;
 public class ManifestReaderActivityImpl implements ManifestReaderActivity {
 
     static final String NOT_A_MANIFEST = "NotAManifest";
-    private static final Logger LOG = Logger.getLogger(ManifestReaderActivityImpl.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ManifestReaderActivityImpl.class);
 
     private final ReadManifestPage readManifestPage;
 
@@ -27,6 +29,7 @@ public class ManifestReaderActivityImpl implements ManifestReaderActivity {
 
     @Override
     public PageRows readPage(Request request) {
+        long startedAt = System.nanoTime();
         ManifestPage page;
         try {
             page = readManifestPage.read(new ManifestLocation(request.bucket(), request.key(), request.versionId()),
@@ -42,11 +45,16 @@ public class ManifestReaderActivityImpl implements ManifestReaderActivity {
                 LOG.warn("Invalid Manifest row: skipped");
             }
         }
-        try (var fields = LogFields.of("event.action", "manifest-page-read", "edt.manifest.offset", String.valueOf(request.offset()),
-                "edt.manifest.next_offset", String.valueOf(page.nextOffset()), "edt.manifest.rows", String.valueOf(page.rows().size()),
-                "edt.manifest.invalid_rows", String.valueOf(page.invalidRows().size()),
-                "edt.manifest.end", String.valueOf(page.endOfManifest()), "temporal.workflow_id", workflowId)) {
-            LOG.info("Manifest Page read");
+        // Made after the invalid-row lines: both set event.action, and closing one would remove the other's key.
+        try (var call = Interaction.outbound("edt.orchestratorReqS3", "manifest-page-read")
+                .duration(System.nanoTime() - startedAt)
+                .with("edt.manifest.offset", request.offset())
+                .with("edt.manifest.next_offset", page.nextOffset())
+                .with("edt.manifest.rows", page.rows().size())
+                .with("edt.manifest.invalid_rows", page.invalidRows().size())
+                .with("edt.manifest.end", page.endOfManifest())
+                .with("temporal.workflow_id", workflowId)) {
+            call.log("Manifest Page read");
         }
         return new PageRows(page.rows(), page.invalidRows().size(), page.nextOffset(), page.endOfManifest());
     }

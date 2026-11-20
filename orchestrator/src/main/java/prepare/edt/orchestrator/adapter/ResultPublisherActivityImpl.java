@@ -2,14 +2,12 @@ package prepare.edt.orchestrator.adapter;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.jboss.logging.Logger;
-import prepare.edt.orchestrator.infrastructure.LogFields;
+import prepare.edt.orchestrator.infrastructure.Interaction;
 import prepare.edt.orchestrator.usecase.EventPublisher;
 
 /** Turns each event into JSON and publishes it to its topic, keyed by device (a Batch result: by Batch). */
 public class ResultPublisherActivityImpl implements ResultPublisherActivity {
 
-    private static final Logger LOG = Logger.getLogger(ResultPublisherActivityImpl.class);
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final EventPublisher publisher;
@@ -43,10 +41,10 @@ public class ResultPublisherActivityImpl implements ResultPublisherActivity {
         } catch (JsonProcessingException e) {
             throw new IllegalStateException("cannot write " + type + " as JSON", e);
         }
-        publisher.publish(topic, key, eventId, type, json);
-        try (var fields = LogFields.of("event.action", "result-published", "edt.kafka.topic", topic,
-                "edt.event_id", eventId, "edt.event_type", type)) {
-            LOG.info("Published to Kafka");
+        try (var call = Interaction.outbound("edt.orchestratorReqKafka", "result-published")
+                .with("edt.kafka.topic", topic).with("edt.event_id", eventId).with("edt.event_type", type)) {
+            publisher.publish(topic, key, eventId, type, json);
+            call.log("Published to Kafka");
         }
     }
 

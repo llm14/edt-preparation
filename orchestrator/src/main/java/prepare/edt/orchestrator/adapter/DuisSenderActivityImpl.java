@@ -1,17 +1,22 @@
 package prepare.edt.orchestrator.adapter;
 
+import io.temporal.activity.Activity;
 import io.temporal.failure.ApplicationFailure;
 import java.io.StringReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
-import org.jboss.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
+import prepare.edt.orchestrator.entity.RequestId;
+import prepare.edt.orchestrator.infrastructure.Interaction;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 
 /**
@@ -30,7 +35,7 @@ public final class DuisSenderActivityImpl implements DuisSenderActivity {
 
     private static final String NAMESPACE = "urn:edt:placeholder:duis";
     static final String SIGNATURE_INVALID = "DspSignatureInvalid";
-    private static final Logger SECURITY = Logger.getLogger("edt.security");
+    private static final Logger SECURITY = LoggerFactory.getLogger("edt.security");
 
     private final URI gateway;
     private final HttpClient http;
@@ -44,19 +49,48 @@ public final class DuisSenderActivityImpl implements DuisSenderActivity {
 
     @Override
     public SyncResponse send(String signedServiceRequest) {
-        HttpResponse<String> response;
+        return send(signedServiceRequest, requestIdFromWorkflow());
+    }
+
+    /**
+     * The activity receives only the signed XML, so the Request ID for the log comes from the workflow ID
+     * ({@code service-request-<Request ID>}, the rule of {@link RequestId#workflowId(String)}).
+     */
+    private static String requestIdFromWorkflow() {
         try {
-            response = http.send(HttpRequest.newBuilder(gateway)
-                            .timeout(Duration.ofSeconds(30))
-                            .header("Content-Type", "application/xml")
-                            .POST(HttpRequest.BodyPublishers.ofString(signedServiceRequest))
-                            .build(),
-                    HttpResponse.BodyHandlers.ofString());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted while posting to " + gateway, e);
-        } catch (Exception e) {
-            throw new IllegalStateException("cannot post to " + gateway + ": " + e.getMessage(), e);
+            return RequestId.requestIdOf(Activity.getExecutionContext().getInfo().getWorkflowId());
+        } catch (RuntimeException e) {
+            return "none"; // called outside Temporal (unit tests)
+        }
+    }
+
+    SyncResponse send(String signedServiceRequest, String requestId) {
+        HttpResponse<String> response;
+        // Row 9: one line for each attempt, success or failure. No stack: Temporal logs the failed activity with its stack.
+        try (var call = Interaction.outbound("edt.orchestratorReqHttp", "service-request-sent")
+                .with("destination.address", gateway.getHost())
+                .with("http.request.body.bytes", signedServiceRequest.getBytes(StandardCharsets.UTF_8).length)
+                .with("edt.request_id", requestId)) {
+            try {
+                response = http.send(HttpRequest.newBuilder(gateway)
+                                .timeout(Duration.ofSeconds(30))
+                                .header("Content-Type", "application/xml")
+                                .POST(HttpRequest.BodyPublishers.ofString(signedServiceRequest))
+                                .build(),
+                        HttpResponse.BodyHandlers.ofString());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                call.failure().log("Service Request not posted to the DSP HTTPS Gateway");
+                throw new IllegalStateException("interrupted while posting to " + gateway, e);
+            } catch (Exception e) {
+                call.failure().log("Service Request not posted to the DSP HTTPS Gateway");
+                throw new IllegalStateException("cannot post to " + gateway + ": " + e.getMessage(), e);
+            }
+            call.with("http.response.status_code", response.statusCode());
+            if (response.statusCode() != 200) {
+                call.failure();
+            }
+            call.log("Service Request posted to the DSP HTTPS Gateway");
         }
         if (response.statusCode() != 200) {
             throw new IllegalStateException("DSP HTTPS Gateway answered HTTP " + response.statusCode()

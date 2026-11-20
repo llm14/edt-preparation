@@ -1,6 +1,7 @@
 package prepare.edt.orchestrator.adapter;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.temporal.activity.Activity;
@@ -8,6 +9,7 @@ import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowOptions;
 import io.temporal.client.WorkflowStub;
 import io.temporal.testing.TestWorkflowEnvironment;
+import io.temporal.testing.WorkflowReplayer;
 import io.temporal.worker.Worker;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -48,6 +50,7 @@ class ServiceRequestWorkflowTest {
     }
 
     TestWorkflowEnvironment env;
+    Worker orchestratorWorker;
     Worker signerWorker;
     Worker senderWorker;
     final List<String> sent = new ArrayList<>();
@@ -57,7 +60,7 @@ class ServiceRequestWorkflowTest {
     @BeforeEach
     void setUp() {
         env = TestWorkflowEnvironment.newInstance();
-        Worker orchestrator = env.newWorker(ORCHESTRATOR_QUEUE);
+        Worker orchestrator = orchestratorWorker = env.newWorker(ORCHESTRATOR_QUEUE);
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(SIGNING_QUEUE, SEND_QUEUE, RESPONSE_TIMEOUT));
         orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
@@ -257,6 +260,52 @@ class ServiceRequestWorkflowTest {
             assertEquals("dcc-alert-received", fields.get("event.action"));
             assertEquals("N53", fields.get("edt.alert_code"));
             assertEquals(INPUT.requestId(), fields.get("edt.request_id"));
+        }
+    }
+
+    @Test
+    void each_signal_is_one_interaction_line_with_the_request_id_message_type_and_alert_code() {
+        try (LogCapture log = new LogCapture()) {
+            signerSigns();
+            dspAccepts();
+            env.start();
+
+            ServiceRequestWorkflow workflow = start();
+            signal(new DspMessage(DspMessage.DCC_ALERT, "N53", "<Alert/>"));
+            signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
+            result(workflow);
+
+            var lines = log.lines("edt.interaction");
+            assertEquals(2, lines.size(), "one line per signal");
+            for (var line : lines) {
+                var fields = line.fields();
+                assertEquals("dsp-message-received", fields.get("event.action"));
+                assertEquals("edt.orchestratorReqGrpc", fields.get("edt.interface"));
+                assertEquals("inbound", fields.get("network.direction"));
+                assertEquals("success", fields.get("event.outcome"));
+                assertEquals(INPUT.requestId(), fields.get("edt.request_id"));
+            }
+            assertEquals("DCC_ALERT", lines.get(0).fields().get("edt.message_type"));
+            assertEquals("N53", lines.get(0).fields().get("edt.alert_code"));
+            assertEquals("RESPONSE", lines.get(1).fields().get("edt.message_type"));
+            assertFalse(lines.get(1).fields().containsKey("edt.alert_code"));
+        }
+    }
+
+    @Test
+    void replaying_the_workflow_writes_no_interaction_line() throws Exception {
+        signerSigns();
+        dspAccepts();
+        env.start();
+        ServiceRequestWorkflow workflow = start();
+        signal(new DspMessage(DspMessage.RESPONSE, null, RESPONSE_XML));
+        result(workflow);
+        var history = env.getWorkflowClient().fetchHistory(RequestId.workflowId(INPUT.requestId()));
+
+        try (LogCapture log = new LogCapture()) {
+            WorkflowReplayer.replayWorkflowExecution(history, orchestratorWorker);
+
+            assertEquals(List.of(), log.lines("edt.interaction"), "a replayed signal is not a new event");
         }
     }
 

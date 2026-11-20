@@ -35,25 +35,27 @@ public final class SignServiceRequest {
     }
 
     public SignResult sign(String unsignedXml) {
+        long startedAt = System.nanoTime();
         ServiceRequest request;
         try {
             request = reader.read(unsignedXml);
         } catch (InvalidServiceRequestException e) {
-            return refuse(null, null, "invalid Service Request: " + e.getMessage());
+            return refuse(null, null, "invalid Service Request: " + e.getMessage(), startedAt);
         }
 
         return switch (policy.decide(request)) {
-            case SigningDecision.Refused refused -> refuse(request.requestId(), request.srv(), refused.reason());
+            case SigningDecision.Refused refused -> refuse(request.requestId(), request.srv(), refused.reason(), startedAt);
             case SigningDecision.Approved approved -> {
                 String signedXml = signer.sign(request.xml(), approved.role());
-                auditLog.record(new AuditEvent(request.requestId(), request.srv(), Outcome.SIGNED, approved.role(), null));
+                auditLog.record(new AuditEvent(request.requestId(), request.srv(), Outcome.SIGNED, approved.role(), null,
+                        System.nanoTime() - startedAt));
                 yield new SignResult.Signed(request.requestId(), approved.role(), signedXml);
             }
         };
     }
 
-    private SignResult refuse(String requestId, String srv, String reason) {
-        auditLog.record(new AuditEvent(requestId, srv, Outcome.REFUSED, null, reason));
+    private SignResult refuse(String requestId, String srv, String reason, long startedAt) {
+        auditLog.record(new AuditEvent(requestId, srv, Outcome.REFUSED, null, reason, System.nanoTime() - startedAt));
         return new SignResult.Refused(requestId, reason);
     }
 }
