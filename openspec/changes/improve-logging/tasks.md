@@ -42,14 +42,14 @@ the final logging API.
 
 ## 7. Exceptions (design decision 8)
 
-- [ ] 7.1 Batch Ingest: `manifest-ingest-failed` and `manifest-poll-failed` pass the exception and stop setting `error.message` and `error.type` as fields. Verify: `SqsManifestEventConsumerTest` and a new `ManifestEventPollingTest` assert the captured line has a `thrown` exception and no `error.*` field; the expected-rejection lines (`manifest-event-unreadable`, `manifest-signature-invalid`) still have `error.message` and no `thrown`.
-- [ ] 7.2 Response Listener: `dsp-message-not-delivered` passes the exception. Verify: `DspMessageResourceTest` with a failing signaller asserts `thrown` and no `error.*` field; for an invalid DSP signature and an unreadable message it asserts `error.message` and no `thrown`.
-- [ ] 7.3 Orchestrator: confirm the expected-rejection lines keep `error.message` and no exception (`manifest-row-invalid`, `response-not-decodable`, `dsp-signature-invalid`). Verify: the existing tests of those activities assert `thrown` is null and `error.message` is set.
+- [x] 7.1 Batch Ingest: `manifest-ingest-failed` and `manifest-poll-failed` pass the exception and stop setting `error.message` and `error.type` as fields. Verify: `SqsManifestEventConsumerTest` and a new `ManifestEventPollingTest` assert the captured line has a `thrown` exception and no `error.*` field; the expected-rejection lines (`manifest-event-unreadable`, `manifest-signature-invalid`) still have `error.message` and no `thrown`.
+- [x] 7.2 Response Listener: `dsp-message-not-delivered` passes the exception. Verify: `DspMessageResourceTest` with a failing signaller asserts `thrown` and no `error.*` field; for an invalid DSP signature and an unreadable message it asserts `error.message` and no `thrown`.
+- [x] 7.3 Orchestrator: confirm the expected-rejection lines keep `error.message` and no exception (`manifest-row-invalid`, `response-not-decodable`, `dsp-signature-invalid`). Verify: the existing tests of those activities assert `thrown` is null and `error.message` is set.
 
 ## 8. Checks and documentation
 
-- [ ] 8.1 Extend `deploy/check-log-shape.sh`: every line whose `log.logger` is `edt.interaction` needs `event.action`, `event.outcome`, `edt.interface` and `network.direction`; add `EDT_LOG_FIXTURE_DIR` so the script can read `<app>.log` files instead of the cluster. Verify: with a fixture holding one interaction line without `edt.interface` the script exits 1 and names the key; with a complete line it exits 0.
-- [ ] 8.2 Write `deploy/check-interactions.sh`: per container, the `edt.interface` values a one-device run uses (design table) must each appear on an `edt.interaction` line; it accepts the same fixture directory. Verify: with a fixture missing one interface it exits 1 and names the container and interface; with all of them it exits 0.
+- [x] 8.1 Extend `deploy/check-log-shape.sh`: every line whose `log.logger` is `edt.interaction` needs `event.action`, `event.outcome`, `edt.interface` and `network.direction`; add `EDT_LOG_FIXTURE_DIR` so the script can read `<app>.log` files instead of the cluster. Verify: with a fixture holding one interaction line without `edt.interface` the script exits 1 and names the key; with a complete line it exits 0.
+- [x] 8.2 Write `deploy/check-interactions.sh`: per container, the `edt.interface` values a one-device run uses (design table) must each appear on an `edt.interaction` line; it accepts the same fixture directory. Verify: with a fixture missing one interface it exits 1 and names the container and interface; with all of them it exits 0.
 - [ ] 8.3 Update README Step 4 (the interaction logger, its keys, how to turn it down, the rule on exceptions, one logging API) and `HAPPY-PATH-MANUAL.md` (the lines named there that moved). Verify: the examples in Step 4 match real lines seen in group 9.
 
 ## 9. Check on the cluster

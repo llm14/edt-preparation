@@ -74,8 +74,9 @@ public class DspMessageResource {
             }
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();
         } catch (SignallerUnavailableException e) {
-            try (var fields = LogFields.of("event.action", "dsp-message-not-delivered", "error.message", e.getMessage())) {
-                LOG.error("Could not signal the workflow; the gateway should retry");
+            // A technical failure of ours (Temporal unreachable), not outside input: the exception is passed.
+            try (var fields = LogFields.of("event.action", "dsp-message-not-delivered")) {
+                LOG.error("Could not signal the workflow; the gateway should retry", e);
             }
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR).entity("try again later").build();
         }

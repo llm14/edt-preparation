@@ -159,6 +159,45 @@ class SqsManifestEventConsumerTest {
     }
 
     @Test
+    void a_technical_failure_passes_the_exception_and_sets_no_error_fields_by_hand() {
+        try (LogCapture log = new LogCapture()) {
+            consumer(m -> {
+                throw new IllegalStateException("KMS unreachable");
+            }, true).pollOnce();
+
+            var line = log.lines(SqsManifestEventConsumer.class).stream()
+                    .filter(l -> "manifest-ingest-failed".equals(l.fields().get("event.action"))).findFirst().orElseThrow();
+            assertEquals("KMS unreachable", line.thrown().getMessage());
+            assertFalse(line.fields().containsKey("error.message"));
+            assertFalse(line.fields().containsKey("error.type"));
+        }
+    }
+
+    @Test
+    void an_unreadable_message_keeps_error_message_as_a_field_and_has_no_exception() {
+        try (LogCapture log = new LogCapture()) {
+            consumer(m -> Verdict.signedByDcc(), true).handle(message("not json"));
+
+            var line = log.lines(SqsManifestEventConsumer.class).stream()
+                    .filter(l -> "manifest-event-unreadable".equals(l.fields().get("event.action"))).findFirst().orElseThrow();
+            assertTrue(line.fields().containsKey("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
+    @Test
+    void an_invalid_manifest_signature_keeps_error_message_as_a_field_and_has_no_exception() {
+        try (LogCapture log = new LogCapture()) {
+            consumer(m -> Verdict.invalid("signature does not match the Manifest"), true).pollOnce();
+
+            var line = log.lines("edt.security").get(0);
+            assertEquals("manifest-signature-invalid", line.fields().get("event.action"));
+            assertEquals("signature does not match the Manifest", line.fields().get("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
+    @Test
     void the_batch_lines_are_written_by_the_starter_not_the_consumer() {
         try (LogCapture log = new LogCapture()) {
             consumer(m -> Verdict.signedByDcc(), true).pollOnce();

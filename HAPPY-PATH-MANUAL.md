@@ -37,7 +37,7 @@ Compose and IntelliJ. Checked on 2026-11-19 (the OpenSpec change `local-kubernet
 
 | What | Observed on the cluster |
 |---|---|
-| Batch Ingest | "Manifest received" and "Batch started" in the same second as the upload |
+| Batch Ingest | "Manifest received" (written by the consumer) and "Batch started" (written by the Batch Starter), both on the logger `edt.interaction`, in the same second as the upload |
 | Workflows (Temporal UI, namespace `edt`) | `Batch`, `Page`, `Flow` and `ServiceRequest`, all `COMPLETED` |
 | Service Request history | `TimerStarted` (the 2-minute wait), then `WorkflowExecutionSignaled` 5 s later (the simulator's delay), then `TimerCanceled`: the timeout never fires |
 | Response Listener | "DSP message delivered to its Service Request workflow", about 50 ms before "Service Request ended" (an Orchestrator line with `event.action` `service-request-ended`, `edt.request_id` and `edt.status` `RESPONDED` as top-level fields) |

@@ -42,6 +42,9 @@ class ManifestReaderActivityImplTest {
 
             assertEquals("manifest-row-invalid",
                     log.lines(ManifestReaderActivityImpl.class).get(0).fields().get("event.action"));
+            var invalid = log.lines(ManifestReaderActivityImpl.class).get(0);
+            assertTrue(invalid.fields().containsKey("error.message"), "the reason is a field");
+            assertEquals(null, invalid.thrown(), "an expected rejection carries no stack");
             var page = log.lines("edt.interaction").get(0).fields();
             assertEquals("manifest-page-read", page.get("event.action"));
             assertFalse(log.lines(ManifestReaderActivityImpl.class).get(0).fields().containsKey("edt.interface"));

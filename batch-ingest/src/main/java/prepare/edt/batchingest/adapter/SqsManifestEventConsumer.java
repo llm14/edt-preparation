@@ -86,9 +86,9 @@ public final class SqsManifestEventConsumer {
             try {
                 outcome = ingestManifest.ingest(manifest);
             } catch (RuntimeException e) {
-                try (var failed = LogFields.of("event.action", "manifest-ingest-failed", "event.outcome", "failure",
-                        "error.type", e.getClass().getName(), "error.message", String.valueOf(e.getMessage()))) {
-                    LOG.error("Could not ingest the Manifest: left on the queue, it will come back");
+                // A technical failure: the exception is passed, so the line has error.type, error.message and the stack.
+                try (var failed = LogFields.of("event.action", "manifest-ingest-failed", "event.outcome", "failure")) {
+                    LOG.error("Could not ingest the Manifest: left on the queue, it will come back", e);
                 }
                 return;
             }

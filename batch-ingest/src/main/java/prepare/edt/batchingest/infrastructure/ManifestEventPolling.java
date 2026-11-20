@@ -52,9 +52,9 @@ public class ManifestEventPolling {
                 if (!running) {
                     break;
                 }
-                try (var fields = LogFields.of("event.action", "manifest-poll-failed", "event.outcome", "failure",
-                        "error.message", String.valueOf(e.getMessage()))) {
-                    LOG.warn("Cannot poll the Manifest Events queue; trying again shortly");
+                // A technical failure: the exception is passed, so the line has error.type, error.message and the stack.
+                try (var fields = LogFields.of("event.action", "manifest-poll-failed", "event.outcome", "failure")) {
+                    LOG.warn("Cannot poll the Manifest Events queue; trying again shortly", e);
                 }
                 try {
                     Thread.sleep(PAUSE_AFTER_ERROR);

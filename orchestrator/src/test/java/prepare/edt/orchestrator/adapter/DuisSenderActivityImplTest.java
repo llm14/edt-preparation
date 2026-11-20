@@ -104,6 +104,19 @@ class DuisSenderActivityImplTest {
     }
 
     @Test
+    void a_bad_dsp_signature_alert_keeps_error_message_as_a_field_and_has_no_exception() throws Exception {
+        answer.set(sync("I0", "accepted for delivery").replace("<ResponseCode>I0<", "<ResponseCode>I99<"));
+        try (LogCapture log = new LogCapture()) {
+            assertThrows(ApplicationFailure.class, () -> sender.send("<ServiceRequest/>", "A:B:1"));
+
+            var line = log.lines("edt.security").get(0);
+            assertEquals("dsp-signature-invalid", line.fields().get("event.action"));
+            assertTrue(line.fields().containsKey("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
+    @Test
     void an_unsigned_response_is_not_trusted() {
         answer.set(unsignedSync("I0", "accepted for delivery"));
 

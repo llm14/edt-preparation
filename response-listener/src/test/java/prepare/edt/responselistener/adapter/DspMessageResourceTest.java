@@ -76,6 +76,49 @@ class DspMessageResourceTest {
         }
     }
 
+    @Test
+    void a_failed_signal_passes_the_exception_and_sets_no_error_fields_by_hand() {
+        WorkflowSignaller down = (id, m) -> {
+            throw new WorkflowSignaller.SignallerUnavailableException("UNAVAILABLE", new RuntimeException("cause"));
+        };
+        try (LogCapture log = new LogCapture()) {
+            resource(down).receive(RESPONSE);
+
+            var line = log.lines(DspMessageResource.class).get(0);
+            assertEquals("dsp-message-not-delivered", line.fields().get("event.action"));
+            assertEquals("UNAVAILABLE", line.thrown().getMessage());
+            assertFalse(line.fields().containsKey("error.message"));
+            assertFalse(line.fields().containsKey("error.type"));
+        }
+    }
+
+    @Test
+    void an_invalid_dsp_signature_keeps_error_message_as_a_field_and_has_no_exception() {
+        DspSignatureCheck invalid = body -> {
+            throw new DspSignatureCheck.InvalidDspSignatureException("signature does not match");
+        };
+        var resource = new DspMessageResource(new RouteDspMessage(invalid, new XmlDspMessageReader(), (id, m) -> true));
+        try (LogCapture log = new LogCapture()) {
+            resource.receive(RESPONSE);
+
+            var line = log.lines("edt.security").get(0);
+            assertEquals("signature does not match", line.fields().get("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
+    @Test
+    void an_unreadable_message_keeps_error_message_as_a_field_and_has_no_exception() {
+        try (LogCapture log = new LogCapture()) {
+            resource((id, m) -> true).receive("not xml");
+
+            var line = log.lines(DspMessageResource.class).get(0);
+            assertEquals("dsp-message-unreadable", line.fields().get("event.action"));
+            assertTrue(line.fields().containsKey("error.message"));
+            assertEquals(null, line.thrown());
+        }
+    }
+
     static void assertInteraction(LogCapture.Line line, String action) {
         var fields = line.fields();
         assertEquals(action, fields.get("event.action"));
