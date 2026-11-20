@@ -50,8 +50,10 @@ public class DspMessageResource {
                     .duration(System.nanoTime() - startedAt)
                     .with("edt.request_id", result.message().requestId())
                     .with("edt.message_type", result.message().kind().name())
-                    .with("edt.alert_code", String.valueOf(result.message().alertCode()))
                     .with("temporal.workflow_id", result.workflowId())) {
+                if (result.message().alertCode() != null) {
+                    call.with("edt.alert_code", result.message().alertCode());   // a Response has none: no "null" text
+                }
                 call.log(signalled ? "DSP message delivered to its Service Request workflow"
                         : "No running Service Request workflow for this DSP message");
             }

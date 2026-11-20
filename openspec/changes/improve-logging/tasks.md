@@ -50,14 +50,14 @@ the final logging API.
 
 - [x] 8.1 Extend `deploy/check-log-shape.sh`: every line whose `log.logger` is `edt.interaction` needs `event.action`, `event.outcome`, `edt.interface` and `network.direction`; add `EDT_LOG_FIXTURE_DIR` so the script can read `<app>.log` files instead of the cluster. Verify: with a fixture holding one interaction line without `edt.interface` the script exits 1 and names the key; with a complete line it exits 0.
 - [x] 8.2 Write `deploy/check-interactions.sh`: per container, the `edt.interface` values a one-device run uses (design table) must each appear on an `edt.interaction` line; it accepts the same fixture directory. Verify: with a fixture missing one interface it exits 1 and names the container and interface; with all of them it exits 0.
-- [ ] 8.3 Update README Step 4 (the interaction logger, its keys, how to turn it down, the rule on exceptions, one logging API) and `HAPPY-PATH-MANUAL.md` (the lines named there that moved). Verify: the examples in Step 4 match real lines seen in group 9.
+- [x] 8.3 Update README Step 4 (the interaction logger, its keys, how to turn it down, the rule on exceptions, one logging API) and `HAPPY-PATH-MANUAL.md` (the lines named there that moved). Verify: the examples in Step 4 match real lines seen in group 9.
 
 ## 9. Check on the cluster
 
-- [ ] 9.1 Build and install (`deploy/edt.sh up`), run the one-device sample Manifest. Verify: `deploy/check-log-shape.sh` and `deploy/check-interactions.sh` exit 0; the real lines for rows 9 and 10 have the keys of the spec and no XML.
-- [ ] 9.2 Technical failure: scale Floci to 0 until `manifest-poll-failed` appears, then scale it back. Verify: that line has `error.type`, `error.message` and `error.stack_trace` once each, and Batch Ingest polls again afterwards.
-- [ ] 9.3 Failed send: stop the DSP simulator, upload a one-device Manifest, restore the simulator. Verify: `service-request-sent` with `failure` appears once per attempt, and Temporal's own failed-activity log carries the stack (design decision 7). **If it does not, stop and ask before changing row 9.**
-- [ ] 9.4 Replay: upload a Manifest for `...-A3`, restart the Orchestrator during the wait, let it finish. Verify: each workflow and interaction line appears once for its real event (no repeat from the replay), `batch-start-received` once, and `deploy/check-log-shape.sh` still exits 0.
+- [x] 9.1 Build and install (`deploy/edt.sh up`), run the one-device sample Manifest. Verify: `deploy/check-log-shape.sh` and `deploy/check-interactions.sh` exit 0; the real lines for rows 9 and 10 have the keys of the spec and no XML.
+- [x] 9.2 Technical failure: scale Floci to 0 until `manifest-poll-failed` appears, then scale it back. Verify: that line has `error.type`, `error.message` and `error.stack_trace` once each, and Batch Ingest polls again afterwards.
+- [x] 9.3 Failed send: stop the DSP simulator, upload a one-device Manifest, restore the simulator. Verify: `service-request-sent` with `failure` appears once per attempt, and Temporal's own failed-activity log carries the stack (design decision 7). **If it does not, stop and ask before changing row 9.**
+- [x] 9.4 Replay: upload a Manifest for `...-A3`, restart the Orchestrator during the wait, let it finish. Verify: each workflow and interaction line appears once for its real event (no repeat from the replay), `batch-start-received` once, and `deploy/check-log-shape.sh` still exits 0.
 
 ## Workflow follow-up
 

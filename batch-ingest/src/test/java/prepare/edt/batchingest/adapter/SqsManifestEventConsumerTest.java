@@ -118,11 +118,15 @@ class SqsManifestEventConsumerTest {
                     lines.stream().map(l -> l.fields().get("event.action")).toList());
             for (var line : lines) {
                 assertEquals("edt.batchIngestReqSqs", line.fields().get("edt.interface"));
-                assertEquals("outbound", line.fields().get("network.direction"));
                 assertEquals("success", line.fields().get("event.outcome"));
                 assertEquals("m1", line.fields().get("edt.sqs_message_id"));
-                assertTrue(Long.parseLong(line.fields().get("event.duration")) >= 0);
             }
+            var received = lines.get(0).fields();
+            assertEquals("inbound", received.get("network.direction"));
+            assertFalse(received.containsKey("event.duration"), "the long poll's wait is not the work of the message");
+            var deleted = lines.get(1).fields();
+            assertEquals("outbound", deleted.get("network.direction"));
+            assertTrue(Long.parseLong(deleted.get("event.duration")) >= 0);
             assertEquals("edt-manifests", lines.getFirst().fields().get("edt.manifest.bucket"));
         }
     }

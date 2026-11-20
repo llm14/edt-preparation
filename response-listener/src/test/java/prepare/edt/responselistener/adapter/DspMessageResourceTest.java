@@ -119,6 +119,18 @@ class DspMessageResourceTest {
         }
     }
 
+    @Test
+    void a_dcc_alert_line_carries_its_alert_code() {
+        String alert = "<DCCAlert xmlns=\"urn:edt:placeholder:duis\"><AlertCode>N53</AlertCode><RequestId>o:d:1</RequestId></DCCAlert>";
+        try (LogCapture log = new LogCapture()) {
+            resource((id, m) -> true).receive(alert);
+
+            var fields = log.lines("edt.interaction").get(0).fields();
+            assertEquals("DCC_ALERT", fields.get("edt.message_type"));
+            assertEquals("N53", fields.get("edt.alert_code"));
+        }
+    }
+
     static void assertInteraction(LogCapture.Line line, String action) {
         var fields = line.fields();
         assertEquals(action, fields.get("event.action"));
@@ -127,6 +139,7 @@ class DspMessageResourceTest {
         assertEquals("success", fields.get("event.outcome"));
         assertEquals("o:d:1", fields.get("edt.request_id"));
         assertEquals("RESPONSE", fields.get("edt.message_type"));
+        assertFalse(fields.containsKey("edt.alert_code"), "a Response has no alert code, and no \"null\" text");
         assertTrue(Long.parseLong(fields.get("event.duration")) >= 0);
         assertFalse(line.message().contains("<"));
         assertFalse(fields.values().stream().anyMatch(v -> v.contains("<")), "no part of the XML is in the line");

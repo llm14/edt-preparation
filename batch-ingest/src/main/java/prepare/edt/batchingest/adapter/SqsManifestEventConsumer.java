@@ -48,22 +48,15 @@ public final class SqsManifestEventConsumer {
         if (queueUrl == null) {
             queueUrl = sqs.getQueueUrl(r -> r.queueName(queueName)).queueUrl();
         }
-        long startedAt = System.nanoTime();
         var messages = sqs.receiveMessage(r -> r
                 .queueUrl(queueUrl)
                 .waitTimeSeconds(WAIT_SECONDS)
                 .maxNumberOfMessages(10)).messages();
-        long receiveNanos = System.nanoTime() - startedAt;
-        messages.forEach(message -> handle(message, receiveNanos));
+        messages.forEach(this::handle);
         return messages.size();
     }
 
     void handle(Message message) {
-        handle(message, 0);
-    }
-
-    /** {@code receiveNanos}: how long the receive call that returned this message took. */
-    void handle(Message message, long receiveNanos) {
         ManifestRef manifest;
         try {
             manifest = ObjectCreatedEvent.parse(message.body());
@@ -78,7 +71,8 @@ public final class SqsManifestEventConsumer {
 
         try (var fields = LogFields.of("edt.manifest.bucket", manifest.bucket(), "edt.manifest.key", manifest.key(),
                 "edt.manifest.version_id", manifest.versionId(), "edt.sqs_message_id", message.messageId())) {
-            try (var received = Interaction.outbound(SQS_INTERFACE, "manifest-received").duration(receiveNanos)) {
+            // Inbound, so no duration: the time of the long poll is waiting for a message, not work.
+            try (var received = Interaction.inbound(SQS_INTERFACE, "manifest-received")) {
                 received.log("Manifest received");
             }
 
