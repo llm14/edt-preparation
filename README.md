@@ -853,7 +853,7 @@ The Facts (flat `name -> text`):
 | any | `MessageSuccess`; when it is `false` also `DebugSummary` (the distinct non-success COSEM and ZigBee result strings, comma-separated). A value the Response lacks gives no Fact. |
 
 `MessageSuccess=false` is recorded, not judged: the Service Request stays `RESPONDED` (design D5). The Response is the **decoded MMC XML**, confirmed as what the DSP delivers.
-The DSP simulator answers 4.1.1 with an electricity reading, or a gas reading for the device IDs in `EDT_GAS_DEVICES` (a comma-separated list; Compose and the dcc-tools chart set `EE-FF-01-02-03-04-07-A0`, the GSME of `samples/manifests/three-types.csv`).
+The DSP simulator answers 4.1.1 with an electricity reading, or a gas reading for the device IDs in `EDT_GAS_DEVICES` (a comma-separated list; Compose and the dcc-tools chart set `00-DB-12-34-56-78-93-A0`, the GSME of `samples/manifests/device-types.csv`).
 
 To confirm with DCC / the lead: which Facts each SRV yields (depends on the final Flows) and how Parsec is called. **[CONFIRM]**
 
@@ -863,10 +863,10 @@ dcc-tools makes only what Batch Ingest will read (view 100.010). It does not cop
 EventBridge rule and no dead-letter queue.
 
 ```
-manifest-upload sample.csv
+manifest-upload device-behaviours.csv
   1. SHA-256 of the file, streamed           (MessageDigest, constant memory)
   2. KMS Sign(digest, DIGEST, ECDSA_SHA_256)  with alias/dcc-manifest  (DCC's key, never leaves KMS)
-  3. S3 PutObject edt-manifests/sample.csv, tag dcc-signature=<base64 DER>  -> new object version
+  3. S3 PutObject edt-manifests/device-behaviours.csv, tag dcc-signature=<base64 DER>  -> new object version
   4. SQS SendMessage edt-manifest-events: {"detail-type":"Object Created", "detail":{bucket, object{key, size, version-id}}}
 ```
 
@@ -874,13 +874,13 @@ manifest-upload sample.csv
 |---|---|
 | `dcc-tools/kms-setup/.../KmsSetup.java` | Also creates the Manifest key `alias/dcc-manifest`, the versioned bucket `edt-manifests` and the queue `edt-manifest-events`. |
 | `dcc-tools/manifest-upload/.../ManifestUpload.java` | Steps 1 to 4. `--bad-signature` signs a different digest, for the negative test. |
-| `samples/manifests/sample.csv` | PLACEHOLDER columns `device_id,device_type,flow`, one row per device. |
+| `samples/manifests/` | PLACEHOLDER columns `device_id,device_type,flow`, one row per device. Three files, each with its own purpose: `one-device.csv`, `device-types.csv`, `device-behaviours.csv` (see its README). |
 
 Try it (from `dcc-tools/`, Git Bash):
 ```bash
 ./gradlew installDist && docker compose up -d --build
-MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv
-MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv --bad-signature
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/device-behaviours.csv
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/device-behaviours.csv --bad-signature
 ```
 Each upload is a new object version, as the model says ("resubmitting a file starts a new Batch").
 
@@ -929,7 +929,7 @@ Verified (dcc-tools running, `docker compose up -d --build batch-ingest`):
 
 | Message | Result |
 |---|---|
-| valid Manifest | `Batch started`, workflow `batch-edt-manifests/sample.csv/<version>` Running in Temporal |
+| valid Manifest | `Batch started`, workflow `batch-edt-manifests/<file>/<version>` Running in Temporal |
 | `--bad-signature` | `Manifest rejected: its DCC signature is not valid` on `edt.security`, no workflow |
 | same message again | `Batch already started: duplicate message`, deleted |
 
@@ -966,16 +966,18 @@ Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `r
 **[INFERRED]** The model says the Page reads its rows, but the Batch needs the next Page's offset to keep several Pages
 running. So the Page signals it back (`PageRead`) as soon as it has read. The model does not draw this.
 
-Verified with `samples/manifests/sample.csv` (upload as in step 15):
+Verified with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7):
 
 | Device | Service Request | Verdict |
 |---|---|---|
 | A0, A5 | RESPONDED | RESPONDS |
 | A1, A2 | FAILED_ALERT (N12, N13) | NO_RESPONSE |
-| A3 (hub, 8.9) | TIMED_OUT | NO_RESPONSE |
+| A3, A6 | TIMED_OUT (A3 silent; A6's tampered Response was discarded) | NO_RESPONSE |
+| A4 | REJECTED_BY_DSP | NOT_DIAGNOSED |
+| A7 | SEND_FAILED (tampered synchronous response refused) | NOT_DIAGNOSED |
 
-Pages read bytes 0-99, 99-170 and 170-206. The Batch continued as new after Page 1. Result:
-`{"devices":5,"invalidRows":0,"pages":3,"verdicts":{"NO_RESPONSE":3,"RESPONDS":2}}`.
+Result: `{"devices":8,"invalidRows":0,"pages":5,"verdicts":{"NOT_DIAGNOSED":2,"NO_RESPONSE":4,"RESPONDS":2}}`.
+The Batch continues as new after enough Pages. `device-types.csv` gives the three Response shapes and their Facts (step 14).
 
 ### Step 18: Kafka (bare minimum) and the Result Publisher
 

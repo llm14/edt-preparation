@@ -41,9 +41,9 @@ Test classes named below are the ones to add or update; run a module with `./gra
 
 ## 6. Samples, documentation and the whole run
 
-- [x] 6.1 Add `samples/manifests/three-types.csv` (one ESME, one GSME listed in `EDT_GAS_DEVICES`, one CHF) and describe it in `samples/manifests/README.md`; verify a new `SampleManifestsTest` in the orchestrator parses every row of the file with `ManifestRow.parse` (three valid rows, types ESME, GSME and CHF)
+- [x] 6.1 Add `samples/manifests/device-types.csv` (one ESME, one GSME listed in `EDT_GAS_DEVICES`, one CHF) and describe it in `samples/manifests/README.md`; verify a new `SampleManifestsTest` in the orchestrator parses every row of the file with `ManifestRow.parse` (three valid rows, types ESME, GSME and CHF)
 - [x] 6.2 Update README (the Response, the Facts, `EDT_GAS_DEVICES`) and `HAPPY-PATH-MANUAL.md` (Facts seen in Kafka); verify the documented commands run as written
-- [x] 6.3 Run the whole path on the cluster after `deploy/edt.sh down` and `up`: upload `three-types.csv`; verify one `FlowStep` per device with the Facts of D4, three `DeviceResult` with verdict `RESPONDS`, one `BatchResult` with `devices` 3, and that devices ending A1, A2, A3, A5, A6 and A7 still end as before (N12 and N13 failed, silent timed out, N53 then Response, tampered Response discarded, tampered synchronous response refused)
+- [x] 6.3 Run the whole path on the cluster after `deploy/edt.sh down` and `up`: upload `device-types.csv`; verify one `FlowStep` per device with the Facts of D4, three `DeviceResult` with verdict `RESPONDS`, one `BatchResult` with `devices` 3, and that devices ending A1, A2, A3, A5, A6 and A7 still end as before (N12 and N13 failed, silent timed out, N53 then Response, tampered Response discarded, tampered synchronous response refused)
 - [x] 6.4 Run `./gradlew test` for all modules and `./gradlew test` from `dcc-tools/` (a separate Gradle build); verify green
 
 ## Workflow follow-up
