@@ -40,13 +40,15 @@ class ServiceRequestWorkflowTest {
             RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value(), "batch-1",
             "90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", "ESME", "4.1.1");
 
-    /** Responses in the simulator's placeholder format, which the PlaceholderResponseDecoder reads. */
+    /** Responses in the real MMC format (written from RTDS ECS17b), which the RealResponseDecoder reads. */
     static final String RESPONSE_XML = response("12345.6");
     static final String EARLY_RESPONSE_XML = response("7.0");
 
     static String response(String reading) {
-        return "<Response xmlns=\"urn:edt:placeholder:duis\"><RequestId>R</RequestId><ResponseCode>I0</ResponseCode>"
-                + "<Body><InstantaneousImportRegister>" + reading + "</InstantaneousImportRegister></Body></Response>";
+        return "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+                + "<ra:ReadInstantaneousImportRegistersRsp MessageSuccess=\"true\"><ra:Electricity><ra:ActiveImportRegister>"
+                + "<ra:Value>" + reading + "</ra:Value><ra:ActiveEnergyUnit>Wh</ra:ActiveEnergyUnit></ra:ActiveImportRegister>"
+                + "</ra:Electricity></ra:ReadInstantaneousImportRegistersRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
     }
 
     TestWorkflowEnvironment env;
@@ -65,7 +67,7 @@ class ServiceRequestWorkflowTest {
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(SIGNING_QUEUE, SEND_QUEUE, RESPONSE_TIMEOUT));
         orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
-                new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
+                new ResponseDecoderActivityImpl(new RealResponseDecoder()));
         signerWorker = env.newWorker(SIGNING_QUEUE);
         senderWorker = env.newWorker(SEND_QUEUE);
     }
@@ -86,7 +88,7 @@ class ServiceRequestWorkflowTest {
 
         ServiceRequestOutcome outcome = result(workflow);
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals(Facts.of(Map.of("InstantaneousImportRegister", "12345.6")), outcome.facts(),
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "ActiveImportRegister", "12345.6", "ActiveImportRegister.Unit", "Wh")), outcome.facts(),
                 "the Response is decoded into Facts");
         assertEquals(1, sends.get());
         assertTrue(sent.get(0).contains("<sr:RequestID>" + INPUT.requestId() + "</sr:RequestID>"),
@@ -103,11 +105,11 @@ class ServiceRequestWorkflowTest {
         env.start();
 
         ServiceRequestWorkflow workflow = start();
-        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response xmlns=\"urn:edt:placeholder:duis\"/>"));
+        signal(new DspMessage(DspMessage.RESPONSE, null, "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\"/>"));
 
         ServiceRequestOutcome outcome = result(workflow);
         assertEquals(ServiceRequestOutcome.DECODE_FAILED, outcome.status());
-        assertEquals("the Response has no Body", outcome.detail());
+        assertEquals("the Response has no ReadInstantaneousImportRegistersRsp", outcome.detail());
         assertEquals(1, sends.get());
     }
 
@@ -138,7 +140,7 @@ class ServiceRequestWorkflowTest {
         ServiceRequestOutcome outcome = result(start());
 
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals("7.0", outcome.facts().values().get("InstantaneousImportRegister"));
+        assertEquals("7.0", outcome.facts().values().get("ActiveImportRegister"));
     }
 
     @Test

@@ -12,10 +12,10 @@ class ResponseDecoderActivityImplTest {
 
     @Test
     void an_undecodable_response_keeps_error_message_as_a_field_and_has_no_exception() {
-        var activity = new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder());
+        var activity = new ResponseDecoderActivityImpl(new RealResponseDecoder());
         try (LogCapture log = new LogCapture()) {
             assertThrows(ApplicationFailure.class,
-                    () -> activity.decode("4.1.1", "<Response xmlns=\"urn:edt:placeholder:duis\"/>"));
+                    () -> activity.decode("4.1.1", "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\"/>"));
 
             var line = log.lines(ResponseDecoderActivityImpl.class).get(0);
             assertEquals("response-not-decodable", line.fields().get("event.action"));

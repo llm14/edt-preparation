@@ -22,16 +22,16 @@ Test classes named below are the ones to add or update; run a module with `./gra
 
 ## 3. Response decoding (after the gate)
 
-- [ ] 3.1 Add the 4.1.1 decoder for electricity and gas (per-SRV map, device type read from the `Electricity` or `Gas` child) and make it the `ResponseDecoder`; verify `RealResponseDecoderTest` with the ECS17b single and twin-element and GCS13a examples (Facts `ActiveImportRegister`, `ReactiveImportRegister`, `SecondaryActiveImportRegister`, `ConsumptionRegister`, each with `.Unit`)
-- [ ] 3.2 Add the 8.9 decoder (one `CHFDeviceLog.<deviceId>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` per entry); verify `RealResponseDecoderTest` with the CCS06 example and an empty log
-- [ ] 3.3 Record `MessageSuccess` always and `DebugSummary` (distinct non-success COSEM and ZigBee result strings) when it is `false`, with no Fact for a value the Response lacks; verify `RealResponseDecoderTest` with the ECS17b error (`hardware-fault`) and GCS13a error (`HARDWARE_FAILURE`) examples
-- [ ] 3.4 Raise `UndecodableResponseException` for XML that is not well-formed, an SRV with no decoder, and a Response without its `...Rsp` element, delete `PlaceholderResponseDecoder` and its test, and update `ResponseDecoderActivityImplTest` and `ServiceRequestWorkflowTest` fixtures; verify both pass and the workflow ends `DECODE_FAILED` for each case
-- [ ] 3.5 Update the Facts in `ResultPublisherActivityImplTest` and `PlaceholderFlowWorkflowTest` to the new names; verify `./gradlew :orchestrator:test` passes, including the architecture test
+- [x] 3.1 Add the 4.1.1 decoder for electricity and gas (per-SRV map, device type read from the `Electricity` or `Gas` child) and make it the `ResponseDecoder`; verify `RealResponseDecoderTest` with the ECS17b single and twin-element and GCS13a examples (Facts `ActiveImportRegister`, `ReactiveImportRegister`, `SecondaryActiveImportRegister`, `ConsumptionRegister`, each with `.Unit`)
+- [x] 3.2 Add the 8.9 decoder (one `CHFDeviceLog.<deviceId>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` per entry); verify `RealResponseDecoderTest` with the CCS06 example and an empty log
+- [x] 3.3 Record `MessageSuccess` always and `DebugSummary` (distinct non-success COSEM and ZigBee result strings) when it is `false`, with no Fact for a value the Response lacks; verify `RealResponseDecoderTest` with the ECS17b error (`hardware-fault`) and GCS13a error (`HARDWARE_FAILURE`) examples
+- [x] 3.4 Raise `UndecodableResponseException` for XML that is not well-formed, an SRV with no decoder, and a Response without its `...Rsp` element, delete `PlaceholderResponseDecoder` and its test, and update `ResponseDecoderActivityImplTest` and `ServiceRequestWorkflowTest` fixtures; verify both pass and the workflow ends `DECODE_FAILED` for each case
+- [x] 3.5 Update the Facts in `ResultPublisherActivityImplTest` and `PlaceholderFlowWorkflowTest` to the new names; verify `./gradlew :orchestrator:test` passes, including the architecture test
 
 ## 4. The Response Listener (after the gate)
 
-- [ ] 4.1 Change `XmlDspMessageReader` to read a `GBCSResponse` with a `ResponseMessage` and rebuild the Request ID from `BusinessTargetID:BusinessOriginatorID:OriginatorCounter`, or from the supplementary fields when `SupplementaryRemotePartyID` is present; keep reading the placeholder `DCCAlert`; refuse a `DeviceAlertMessage`, a placeholder `Response` and an incomplete header as unreadable; verify `XmlDspMessageReaderTest` with the ECS17b (`...90-A0:1000`) and CCS06 (`...90-A2:1000`) headers, an 8F66 alert and a placeholder N12 alert
-- [ ] 4.2 Update the fixtures of `DspMessageResourceTest` and `DspSignatureVerifierTest` (both apps) to the real Response; verify `./gradlew :response-listener:test` and `:orchestrator:test` pass, and that a Response changed after signing still signals no workflow
+- [x] 4.1 Change `XmlDspMessageReader` to read a `GBCSResponse` with a `ResponseMessage` and rebuild the Request ID from `BusinessTargetID:BusinessOriginatorID:OriginatorCounter`, or from the supplementary fields when `SupplementaryRemotePartyID` is present; keep reading the placeholder `DCCAlert`; refuse a `DeviceAlertMessage`, a placeholder `Response` and an incomplete header as unreadable; verify `XmlDspMessageReaderTest` with the ECS17b (`...90-A0:1000`) and CCS06 (`...90-A2:1000`) headers, an 8F66 alert and a placeholder N12 alert
+- [x] 4.2 Update the fixtures of `DspMessageResourceTest` and `DspSignatureVerifierTest` (both apps) to the real Response; verify `./gradlew :response-listener:test` and `:orchestrator:test` pass, and that a Response changed after signing still signals no workflow
 
 ## 5. The DSP simulator Response (after the gate)
 

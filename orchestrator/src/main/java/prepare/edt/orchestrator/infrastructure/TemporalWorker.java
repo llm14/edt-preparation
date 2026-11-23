@@ -19,7 +19,7 @@ import prepare.edt.orchestrator.adapter.DuisSenderActivityImpl;
 import prepare.edt.orchestrator.adapter.ManifestReaderActivityImpl;
 import prepare.edt.orchestrator.adapter.PageWorkflowImpl;
 import prepare.edt.orchestrator.adapter.PlaceholderFlowWorkflowImpl;
-import prepare.edt.orchestrator.adapter.PlaceholderResponseDecoder;
+import prepare.edt.orchestrator.adapter.RealResponseDecoder;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
 import prepare.edt.orchestrator.adapter.ResponseDecoderActivityImpl;
 import prepare.edt.orchestrator.adapter.ResultPublisherActivityImpl;
@@ -87,7 +87,7 @@ public class TemporalWorker {
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
         // PLACEHOLDER decoder: Parsec (CSW software) goes behind the same ResponseDecoder port.
         orchestrator.registerActivitiesImplementations(manifestReader, resultPublisher, new RequestBuilderActivityImpl(),
-                new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
+                new ResponseDecoderActivityImpl(new RealResponseDecoder()));
 
         // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,
         // so it holds across all replicas. (setMaxWorkerActivitiesPerSecond would limit each worker alone.)

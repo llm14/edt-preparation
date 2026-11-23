@@ -12,7 +12,12 @@ import prepare.edt.responselistener.usecase.WorkflowSignaller;
 /** The HTTP answer for each outcome: it tells the gateway whether to retry. */
 class DspMessageResourceTest {
 
-    static final String RESPONSE = "<Response xmlns=\"urn:edt:placeholder:duis\"><RequestId>o:d:1</RequestId></Response>";
+    static final String RESPONSE = "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\" schemaVersion=\"5.5\"><ra:Header>"
+            + "<ra:BusinessOriginatorID>d</ra:BusinessOriginatorID>"
+            + "<ra:BusinessTargetID>o</ra:BusinessTargetID>"
+            + "<ra:OriginatorCounter>1</ra:OriginatorCounter></ra:Header><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadInstantaneousImportRegistersRsp MessageSuccess=\"true\"/></ra:SMETSData></ra:ResponseMessage></ra:Body>"
+            + "</ra:GBCSResponse>";
 
     @Test
     void signalled_is_200() {
