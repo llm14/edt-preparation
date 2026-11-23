@@ -74,9 +74,17 @@ class PlaceholderFlowWorkflowTest {
     }
 
     @Test
-    void a_hub_gets_8_2() {
+    void a_hub_gets_8_9() {
         assertEquals("NO_RESPONSE", verdict("00-DB-12-34-56-78-90-A3", "CHF"));
-        assertTrue(REQUESTS.get(0).contains(" 8.2 "));
+        assertEquals(1, REQUESTS.size());
+        assertTrue(REQUESTS.get(0).contains(" 8.9 "));
+    }
+
+    @Test
+    void a_gas_meter_gets_4_1_1_like_an_electricity_meter() {
+        assertEquals("RESPONDS", verdict("00-DB-12-34-56-78-90-A0", "GSME"));
+        assertEquals(1, REQUESTS.size());
+        assertTrue(REQUESTS.get(0).contains(" 4.1.1 "));
     }
 
     @Test

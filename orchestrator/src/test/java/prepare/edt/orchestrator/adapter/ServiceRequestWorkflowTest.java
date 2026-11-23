@@ -54,6 +54,7 @@ class ServiceRequestWorkflowTest {
     Worker signerWorker;
     Worker senderWorker;
     final List<String> sent = new ArrayList<>();
+    final List<String> signedForDeviceTypes = new ArrayList<>();
     final AtomicInteger sends = new AtomicInteger();
     final List<String> fairnessKeys = new ArrayList<>();
 
@@ -88,9 +89,11 @@ class ServiceRequestWorkflowTest {
         assertEquals(Facts.of(Map.of("InstantaneousImportRegister", "12345.6")), outcome.facts(),
                 "the Response is decoded into Facts");
         assertEquals(1, sends.get());
-        assertTrue(sent.get(0).contains("<RequestId>" + INPUT.requestId() + "</RequestId>"),
+        assertTrue(sent.get(0).contains("<sr:RequestID>" + INPUT.requestId() + "</sr:RequestID>"),
                 "the Request Builder writes the Request ID into the request");
         assertTrue(sent.get(0).contains("<Signature/>"), "what is sent is the signed request");
+        assertEquals(List.of("ESME"), signedForDeviceTypes,
+                "the request names no device type, so the signer is given it next to the request");
     }
 
     @Test
@@ -180,7 +183,7 @@ class ServiceRequestWorkflowTest {
 
     @Test
     void a_refused_signature_stops_it_before_sending() {
-        signerWorker.registerActivitiesImplementations((SignActivity) xml ->
+        signerWorker.registerActivitiesImplementations((SignActivity) (xml, deviceType) ->
                 new SignOutcome(SignOutcome.REFUSED, INPUT.requestId(), null, null, "SRV not allowed"));
         dspAccepts();
         env.start();
@@ -312,9 +315,11 @@ class ServiceRequestWorkflowTest {
     // --- helpers ---
 
     void signerSigns() {
-        signerWorker.registerActivitiesImplementations((SignActivity) xml ->
-                new SignOutcome(SignOutcome.SIGNED, INPUT.requestId(), "OTHER_USER",
-                        xml.replace("</ServiceRequest>", "<Signature/></ServiceRequest>"), null));
+        signerWorker.registerActivitiesImplementations((SignActivity) (xml, deviceType) -> {
+            signedForDeviceTypes.add(deviceType);
+            return new SignOutcome(SignOutcome.SIGNED, INPUT.requestId(), "OTHER_USER",
+                    xml.replace("</sr:Request>", "<Signature/></sr:Request>"), null);
+        });
     }
 
     void dspAccepts() {

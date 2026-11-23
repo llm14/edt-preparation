@@ -16,7 +16,7 @@ class SigningPolicyTest {
     static final SigningPolicy POLICY = new SigningPolicy(Map.of(
             UserRole.OTHER_USER, new RolePolicy(OTHER_USER_ID, Map.of(
                     "4.1.1", Set.of("ESME", "GSME"),          // both roles may send 4.1.1
-                    "8.2", Set.of("CHF"))),
+                    "8.9", Set.of("CHF"))),
             UserRole.REGISTERED_SUPPLIER_AGENT, new RolePolicy(RSA_USER_ID, Map.of(
                     "4.1.1", Set.of("ESME", "GSME"),
                     "6.15.1", Set.of("ESME")))));               // only the Registered Supplier Agent
@@ -31,6 +31,18 @@ class SigningPolicyTest {
     void srv_allowed_only_for_registered_supplier_agent_is_signed_as_that_role() {
         assertEquals(new SigningDecision.Approved(UserRole.REGISTERED_SUPPLIER_AGENT),
                 POLICY.decide(request("6.15.1", RSA_USER_ID, "ESME")));
+    }
+
+    @Test
+    void a_communications_hub_is_allowed_for_srv_8_9() {
+        assertEquals(new SigningDecision.Approved(UserRole.OTHER_USER),
+                POLICY.decide(request("8.9", OTHER_USER_ID, "CHF")));
+    }
+
+    @Test
+    void srv_8_2_is_no_longer_on_the_allowlist() {
+        assertEquals(new SigningDecision.Refused("SRV 8.2 is not on the allowlist of any User Role"),
+                POLICY.decide(request("8.2", OTHER_USER_ID, "CHF")));
     }
 
     @Test

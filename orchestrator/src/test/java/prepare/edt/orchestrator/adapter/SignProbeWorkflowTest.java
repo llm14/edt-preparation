@@ -43,11 +43,11 @@ class SignProbeWorkflowTest {
 
     @Test
     void returns_the_signed_outcome() {
-        signerWorker.registerActivitiesImplementations((SignActivity) request ->
+        signerWorker.registerActivitiesImplementations((SignActivity) (request, deviceType) ->
                 new SignOutcome(SignOutcome.SIGNED, "REQ-1", "OTHER_USER", request + "<Signature/>", null));
         env.start();
 
-        SignOutcome outcome = newWorkflow().probeSigning("<request/>");
+        SignOutcome outcome = newWorkflow().probeSigning("<request/>", "ESME");
 
         assertEquals(new SignOutcome("SIGNED", "REQ-1", "OTHER_USER", "<request/><Signature/>", null), outcome);
     }
@@ -55,13 +55,13 @@ class SignProbeWorkflowTest {
     @Test
     void a_refusal_is_a_normal_result_and_is_not_retried() {
         AtomicInteger calls = new AtomicInteger();
-        signerWorker.registerActivitiesImplementations((SignActivity) request -> {
+        signerWorker.registerActivitiesImplementations((SignActivity) (request, deviceType) -> {
             calls.incrementAndGet();
             return new SignOutcome(SignOutcome.REFUSED, "REQ-1", null, null, "SRV not allowed");
         });
         env.start();
 
-        SignOutcome outcome = newWorkflow().probeSigning("<request/>");
+        SignOutcome outcome = newWorkflow().probeSigning("<request/>", "ESME");
 
         assertEquals("REFUSED", outcome.status());
         assertEquals("SRV not allowed", outcome.refusalReason());
@@ -71,24 +71,24 @@ class SignProbeWorkflowTest {
     @Test
     void a_technical_error_is_retried_three_times_then_fails() {
         AtomicInteger calls = new AtomicInteger();
-        signerWorker.registerActivitiesImplementations((SignActivity) request -> {
+        signerWorker.registerActivitiesImplementations((SignActivity) (request, deviceType) -> {
             calls.incrementAndGet();
             throw new IllegalStateException("KMS unreachable");
         });
         env.start();
 
-        assertThrows(WorkflowFailedException.class, () -> newWorkflow().probeSigning("<request/>"));
+        assertThrows(WorkflowFailedException.class, () -> newWorkflow().probeSigning("<request/>", "ESME"));
         assertEquals(3, calls.get(), "maximum 3 attempts");
     }
 
     @Test
     void the_probe_lines_carry_their_data_as_fields() {
         try (LogCapture log = new LogCapture()) {
-            signerWorker.registerActivitiesImplementations((SignActivity) request ->
+            signerWorker.registerActivitiesImplementations((SignActivity) (request, deviceType) ->
                     new SignOutcome(SignOutcome.REFUSED, "REQ-1", null, null, "SRV not allowed"));
             env.start();
 
-            newWorkflow().probeSigning("<request/>");
+            newWorkflow().probeSigning("<request/>", "ESME");
 
             var started = log.lines(SignProbeWorkflowImpl.class, "Asking the DUIS Signer to sign");
             assertEquals(1, started.size());
@@ -105,11 +105,11 @@ class SignProbeWorkflowTest {
     @Test
     void a_signed_outcome_has_no_refusal_reason_field() {
         try (LogCapture log = new LogCapture()) {
-            signerWorker.registerActivitiesImplementations((SignActivity) request ->
+            signerWorker.registerActivitiesImplementations((SignActivity) (request, deviceType) ->
                     new SignOutcome(SignOutcome.SIGNED, "REQ-1", "OTHER_USER", request + "<Signature/>", null));
             env.start();
 
-            newWorkflow().probeSigning("<request/>");
+            newWorkflow().probeSigning("<request/>", "ESME");
 
             var outcome = log.lines(SignProbeWorkflowImpl.class, "Sign outcome");
             assertEquals(1, outcome.size());

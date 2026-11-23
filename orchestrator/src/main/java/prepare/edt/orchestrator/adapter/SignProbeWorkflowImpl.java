@@ -32,11 +32,11 @@ public class SignProbeWorkflowImpl implements SignProbeWorkflow {
     }
 
     @Override
-    public SignOutcome probeSigning(String unsignedServiceRequest) {
+    public SignOutcome probeSigning(String unsignedServiceRequest, String deviceType) {
         try (var fields = LogFields.of("event.action", "sign-probe-started")) {
             LOG.info("Asking the DUIS Signer to sign");
         }
-        SignOutcome outcome = signer.sign(unsignedServiceRequest);
+        SignOutcome outcome = signer.sign(unsignedServiceRequest, deviceType);
         try (var fields = LogFields.of("event.action", "sign-probe-outcome", "edt.status", outcome.status())) {
             if (outcome.refusalReason() != null) {
                 fields.add("edt.refusal_reason", outcome.refusalReason());

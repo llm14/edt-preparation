@@ -149,16 +149,20 @@ Look in the Temporal UI: workflow `batch-edt-manifests/one-device.csv/<version>`
 
 | # | App | File:line | What to inspect |
 |---|---|---|---|
-| 21 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:80` (`executeServiceRequest`) | workflow ID = `service-request-<RequestId>` (UI) |
-| 22 | orchestrator | `adapter/RequestBuilderActivityImpl.java:10` (`build`) | the unsigned XML (activity on the `orchestrator` queue) |
-| 23 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:85` (`signer.sign`) | this call goes OUT through Temporal to the `duis-signing` queue |
+| 21 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:83` (`executeServiceRequest`) | workflow ID = `service-request-<RequestId>` (UI) |
+| 22 | orchestrator | `adapter/RequestBuilderActivityImpl.java:33` (`build`) | the unsigned DUIS 5.5 request: `sr:Request`, `RequestID` = `originator:device:counter`, `CommandVariant` 1, one empty body element (activity on the `orchestrator` queue) |
+| 23 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:89` (`signer.sign`) | this call goes OUT through Temporal to the `duis-signing` queue, with the device type as a second argument (the request has none) |
 | 24 | duis-signer | `adapter/SignActivityImpl.java:18` (`sign`) | the activity arrives in a different process |
-| 25 | duis-signer | `usecase/SignServiceRequest.java:40` (`reader.read`) | XML parsed (no DTD) and validated against the schema |
+| 25 | duis-signer | `usecase/SignServiceRequest.java:45` (`reader.read`) | XML parsed (no DTD) and validated against the partial schema `service-request.xsd`; the originator is the first part of the Request ID |
 | 26 | duis-signer | `entity/SigningPolicy.java:44` (`decide`) | allowlist per User Role; returns the role or a refusal |
-| 27 | duis-signer | `usecase/SignServiceRequest.java:48` (`signer.sign`) | goes to `JcaXmlSigner`, then the JDK XML DSig |
+| 27 | duis-signer | `usecase/SignServiceRequest.java:53` (`signer.sign`) | goes to `JcaXmlSigner`, then the JDK XML DSig |
 | 28 | duis-signer | `adapter/kms/KmsSignatureSpi.java:65` (`engineUpdate`) then `:82` (`kms.sign`) | SHA-256 locally, digest to KMS, private key never leaves KMS |
-| 29 | duis-signer | `usecase/SignServiceRequest.java:49` (`auditLog.record`), `adapter/EcsAuditLog.java:19` | one audit event per decision (`edt.audit` logger) |
-| 30 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:85` (after the line) | `signed.status()`, `signed.signedServiceRequest()` |
+| 29 | duis-signer | `usecase/SignServiceRequest.java:54` (`auditLog.record`), `adapter/EcsAuditLog.java:19` | one audit event per decision (`edt.audit` logger) |
+| 30 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:89` (after the line) | `signed.status()`, `signed.signedServiceRequest()` |
+
+The request is a real DUIS 5.5 request since the change `real-duis-messages` (group 1): SRV 4.1.1 for meters, SRV 8.9 for a
+Communications Hub, written from the released examples (RTDS). The schema is a partial one, not the DUIS XSD. The synchronous
+response, the Response and the DCC Alerts of the simulator are still placeholders at this point.
 
 ### Step 7: Orchestrator → DSP HTTPS Gateway (send once, check the answer)
 

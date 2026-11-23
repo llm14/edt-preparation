@@ -322,8 +322,9 @@ Try it (with `dcc-tools` running):
 docker compose up --build -d orchestrator duis-signer
 docker run --rm --network edt temporalio/admin-tools:1.32.2 \
   temporal --address temporal:7233 --namespace edt \
-  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input '"<request/>"'
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input '"<request/>"' --input '"ESME"'
 ```
+(`SignProbe` takes two inputs since the requests became real DUIS: the request and the device type, which a DUIS request does not carry.)
 It fails on purpose: the signer answers `Signing is not implemented yet` (type `NotImplemented`, non-retryable).
 Open it in the Temporal UI (http://localhost:8088) to see the history:
 
@@ -382,14 +383,14 @@ Two adapters for the ports of step 11a, in `duis-signer/.../adapter`:
 
 | File | What it does |
 |---|---|
-| `XmlServiceRequestReader` | Parses safely (no DTD, so no XXE), validates against `schema/service-request-placeholder.xsd` (**PLACEHOLDER**, not DUIS), reads RequestId, SRV, Originator, DeviceType. |
+| `XmlServiceRequestReader` | Parses safely (no DTD, so no XXE), validates against `schema/service-request.xsd` (a **partial** schema written from the released DUIS 5.5 examples, **not** the DUIS XSD), reads the Request ID, the SRV and the originator (the first part of the Request ID). The device type is not in a DUIS request: the caller gives it (see "Real DUIS Service Request" below). |
 | `JcaXmlSigner` | Adds an enveloped XML signature: ECDSA P-256 + SHA-256, with the role's certificate in `KeyInfo`. Keys from a JCA `KeyStore`, signature from a JCA provider chosen by name. |
 | `SecureXml` | Safe parse and exact write of XML (shared by both). |
 
 Signed result (shortened):
 ```xml
-<ServiceRequest xmlns="urn:edt:placeholder:duis">
-  <Header>...</Header><Body>...</Body>
+<sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">
+  <sr:Header>...</sr:Header><sr:Body>...</sr:Body>
   <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
     <SignedInfo>
       <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
@@ -401,7 +402,7 @@ Signed result (shortened):
     <SignatureValue>...</SignatureValue>  <!-- 64 bytes: r||s -->
     <KeyInfo><X509Data><X509Certificate>...</X509Certificate></X509Data></KeyInfo>
   </Signature>
-</ServiceRequest>
+</sr:Request>
 ```
 
 Tests (no Docker): keys made with `keytool` (EC `secp256r1`) into a PKCS#12 file; sign, then verify with the
@@ -525,13 +526,15 @@ edt.policy.roles.other-user.srvs."4.1.1"=ESME,GSME    # PLACEHOLDER allowlist
 Try it (with `dcc-tools` running, from the repository root, Git Bash):
 ```
 docker compose up --build -d orchestrator duis-signer
-# input: a JSON string with an unsigned placeholder Service Request (samples/sign-probe/)
+# inputs: a JSON string with an unsigned DUIS Service Request (samples/sign-probe/), then the device type
 MSYS_NO_PATHCONV=1 docker run --rm --network edt -v "$(pwd -W)/samples/sign-probe:/in:ro" temporalio/admin-tools:1.32.2 \
   temporal --address temporal:7233 --namespace edt \
-  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input-file /in/signed.json
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 \
+  --input-file /in/signed.json --input '"ESME"'
 ```
-Result: `{"status":"SIGNED","userRole":"OTHER_USER","signedServiceRequest":"<ServiceRequest ...><Signature ...>"}`.
-With `refused.json` (SRV `9.9.9`): `{"status":"REFUSED","refusalReason":"SRV 9.9.9 is not on the allowlist of any User Role"}`.
+Result: `{"status":"SIGNED","userRole":"OTHER_USER","signedServiceRequest":"<sr:Request ...><Signature ...>"}`.
+With `refused.json` and `--input '"CHF"'` (SRV 4.1.1 for a hub; it passes the schema, the policy refuses it):
+`{"status":"REFUSED","refusalReason":"device type CHF is not allowed for SRV 4.1.1"}`.
 
 Audit event (ECS JSON, shortened):
 ```
@@ -571,7 +574,7 @@ ServiceRequestWorkflow (workflow ID = "service-request-" + Request ID)
 | `entity/RequestId` | Request ID = originator : target : counter, and the workflow ID rule. **PLACEHOLDER counter.** |
 | `entity/DccAlerts` | Which alerts fail a Service Request (N12, N13). |
 | `adapter/ServiceRequestWorkflow(Impl)` | The workflow and its signal `DspMessage`. |
-| `adapter/RequestBuilderActivity(Impl)` | Builds the PLACEHOLDER XML the signer validates. |
+| `adapter/RequestBuilderActivity(Impl)` | Builds the real DUIS 5.5 Service Request (see "Real DUIS Service Request" below). |
 | `adapter/DuisSenderActivity`, `SyncResponse` | The sender's contract (implementation in 12b). |
 | `adapter/ServiceRequestOutcome`, `DspMessage`, `ServiceRequestInput` | Data passed through Temporal as JSON. |
 
@@ -590,9 +593,36 @@ Key ideas:
 - **Time skipping**: the test server jumps over timers, so a 2-minute timeout takes milliseconds.
 
 To confirm with DCC / the lead:
-- How the Request ID counter is generated (placeholder for now) and its exact format.
+- How the Request ID counter is generated (placeholder for now). Its text format, `originator:device:counter`, matches the released examples.
 - Open point 2 (retries): built as the model says (send once, never resent). The call described resending.
 - What DCC Alerts other than N12/N13 should do (for now: keep waiting).
+
+#### Real DUIS Service Request
+
+Since the change `real-duis-messages` (group 1) the Service Request is a real DUIS 5.5 request, in the shape of the
+released Reference Test Data Set (RTDS 4.10.0, folder `4.1.1_ECS17b` and `8.9_CCS06`):
+
+```xml
+<sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">
+  <sr:Header>
+    <sr:RequestID>90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000</sr:RequestID>   <!-- originator:device:counter -->
+    <sr:CommandVariant>1</sr:CommandVariant>                                            <!-- 1: a non-critical read -->
+    <sr:ServiceReference>4.1</sr:ServiceReference>
+    <sr:ServiceReferenceVariant>4.1.1</sr:ServiceReferenceVariant>                       <!-- the SRV -->
+  </sr:Header>
+  <sr:Body><sr:ReadInstantaneousImportRegisters/></sr:Body>
+</sr:Request>
+```
+
+| Point | What it means |
+|---|---|
+| Two SRVs | The placeholder Flow sends **4.1.1** (Read Instantaneous Import Registers) to meters and **8.9** (Read Device Log) to a Communications Hub. 8.9 replaces the placeholder 8.2, for which no Response is released. |
+| No device type in the request | The signer's policy checks "device type allowed for the SRV" (model 100.010), so the Orchestrator gives the device type to the `Sign` activity as a second argument. The originator is the first part of the Request ID. |
+| Partial schema | `duis-signer/src/main/resources/schema/service-request.xsd` is written from the examples and says so: it is **not** the DUIS XSD, which DCC has not provided. It accepts only the two request elements, command variant 1, and an unsigned request. |
+| Still placeholder | The synchronous response, the Response and the DCC Alerts the simulator writes (groups 3 to 5 replace the Response). The request Request ID and the counter (workflow time) are unchanged. |
+
+The files of the released set are in `samples/rtds_samples/` (not committed: licence to confirm). The tests hold short
+messages written from them, and each says which example it comes from.
 
 ### Step 12b: the DSP simulator, and the real DUIS Sender
 
@@ -622,7 +652,7 @@ when Temporal is down), then dropped.
 |---|---|
 | `dcc-tools/dsp-simulator/.../DspSimulator.java` | HTTP server: answers at once, schedules the asynchronous messages. |
 | `.../DeviceBehaviour.java` | Behaviour from the device ID. |
-| `.../DspMessages.java` | Reads Service Requests, writes the PLACEHOLDER sync response, Response and DCC Alert. |
+| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the PLACEHOLDER sync response, Response and DCC Alert. |
 | `orchestrator/.../adapter/DuisSenderActivityImpl.java` | Posts once with the JDK `HttpClient`, reads the sync response. HTTP error -> exception. |
 | `orchestrator/.../infrastructure/TemporalWorker.java` | Two workers: `orchestrator` (workflows, builder) and `duis-send` (sender). |
 
@@ -904,7 +934,7 @@ Batch  (ID batch-<bucket>/<key>/<version>, from Batch Ingest)
              returns devices, invalid rows, Verdict counts
   every pages-per-run Pages: wait for them, continue as new carrying (next Page, offset, counts)
   end: Batch result  (logged; published to Kafka in a later step)
-Flow (PLACEHOLDER): one ServiceRequest child (8.2 hubs, 4.1.1 meters) -> RESPONDS / NO_RESPONSE / NOT_DIAGNOSED
+Flow (PLACEHOLDER): one ServiceRequest child (8.9 hubs, 4.1.1 meters) -> RESPONDS / NO_RESPONSE / NOT_DIAGNOSED
 ```
 
 | File (under `orchestrator/src/main/java/prepare/edt/orchestrator/`) | What |
@@ -930,7 +960,7 @@ Verified with `samples/manifests/sample.csv` (upload as in step 15):
 |---|---|---|
 | A0, A5 | RESPONDED | RESPONDS |
 | A1, A2 | FAILED_ALERT (N12, N13) | NO_RESPONSE |
-| A3 (hub, 8.2) | TIMED_OUT | NO_RESPONSE |
+| A3 (hub, 8.9) | TIMED_OUT | NO_RESPONSE |
 
 Pages read bytes 0-99, 99-170 and 170-206. The Batch continued as new after Page 1. Result:
 `{"devices":5,"invalidRows":0,"pages":3,"verdicts":{"NO_RESPONSE":3,"RESPONDS":2}}`.

@@ -11,7 +11,8 @@ import prepare.edt.orchestrator.entity.RequestId;
  * PLACEHOLDER Flow until the Flow Catalogue (model 010.020) is built: whatever the row's Flow, it runs ONE Service
  * Request and turns its outcome into a Verdict. Enough to run a Manifest end to end.
  *
- *   Service Request: 8.2 for a Communications Hub (CHF), 4.1.1 for meters (both in the signer's placeholder allowlist)
+ *   Service Request: 8.9 (Read Device Log) for a Communications Hub (CHF), 4.1.1 (Read Instantaneous Import Registers) for
+ *                    meters; both are in the signer's placeholder allowlist and have released examples (RTDS)
  *   Verdict:         RESPONDED -> RESPONDS;  TIMED_OUT or a DCC Alert N12/N13 -> NO_RESPONSE;  otherwise NOT_DIAGNOSED
  *
  * The real Flow takes the Service Requests, their order and decisions from the Flow Catalogue, publishes each step
@@ -32,7 +33,7 @@ public class PlaceholderFlowWorkflowImpl implements FlowWorkflow {
 
     @Override
     public String diagnoseDevice(FlowInput input) {
-        String srv = "CHF".equals(input.deviceType()) ? "8.2" : "4.1.1";
+        String srv = "CHF".equals(input.deviceType()) ? "8.9" : "4.1.1";
         // Workflow.currentTimeMillis: deterministic on replay (the placeholder counter of the Request ID).
         RequestId requestId = RequestId.placeholder(ORIGINATOR, input.deviceId(), Workflow.currentTimeMillis());
 

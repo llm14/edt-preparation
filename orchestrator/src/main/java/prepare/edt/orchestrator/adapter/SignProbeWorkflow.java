@@ -9,11 +9,11 @@ import io.temporal.workflow.WorkflowMethod;
  * The real Service Request workflow will replace it.
  *
  * Start it from the Temporal CLI with the workflow type "SignProbe" on the task queue "orchestrator",
- * with an unsigned (PLACEHOLDER format) Service Request XML as input.
+ * with two inputs: an unsigned DUIS Service Request XML and the type of its target device (for example "ESME").
  */
 @WorkflowInterface
 public interface SignProbeWorkflow {
 
     @WorkflowMethod(name = "SignProbe")
-    SignOutcome probeSigning(String unsignedServiceRequest);
+    SignOutcome probeSigning(String unsignedServiceRequest, String deviceType);
 }
