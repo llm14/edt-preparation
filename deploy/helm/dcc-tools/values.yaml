@@ -37,6 +37,8 @@ dspSimulator:
   # Where the delayed Responses go: the Response Listener's full service name (it is in another namespace).
   responseListenerUrl: http://response-listener.edt.svc.cluster.local:8084/duis/responses
   responseDelaySeconds: 5
+  # Comma-separated device IDs that are gas meters: a 4.1.1 Response for them is a gas reading (the default is electricity).
+  gasDevices: "EE-FF-01-02-03-04-07-A0"   # the GSME of samples/manifests/three-types.csv
   # The DSP's private signing key lives in this Secret (key "dsp-signing.p12"), created by the install script.
   keySecret: dsp-signing-key
   keystorePassword: edt-test-only   # test only, as in Compose

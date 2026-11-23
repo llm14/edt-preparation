@@ -1,0 +1,4 @@
+device_id,device_type,flow
+EE-FF-01-02-03-04-06-A0,ESME,flow-1
+EE-FF-01-02-03-04-07-A0,GSME,flow-1
+EE-FF-01-02-03-04-08-A0,CHF,flow-1

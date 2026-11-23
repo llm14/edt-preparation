@@ -76,4 +76,48 @@ class DspMessagesTest {
                 <ServiceRequest xmlns="urn:edt:placeholder:duis"><Header><RequestId>R-1</RequestId></Header>\
                 <Body><Target>00-DB-12-34-56-78-90-A1</Target></Body></ServiceRequest>"""));
     }
+
+    // ---- the Response the simulator writes (RTDS ECS17b, GCS13a, CCS06 shapes) ----
+
+    static final String HEADER_ORIGINATOR = "<ra:BusinessOriginatorID>00-DB-12-34-56-78-90-A0</ra:BusinessOriginatorID>";
+
+    @Test
+    void the_response_for_an_electricity_meter_has_the_ecs17b_shape() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_4_1_1), java.util.Set.of());
+
+        assertTrue(xml.contains(HEADER_ORIGINATOR));
+        assertTrue(xml.contains("<ra:BusinessTargetID>90-B3-D5-1F-30-01-00-01</ra:BusinessTargetID>"));
+        assertTrue(xml.contains("<ra:OriginatorCounter>1000</ra:OriginatorCounter>"));
+        assertTrue(xml.contains("<ra:ServiceReference>4.1</ra:ServiceReference>"));
+        assertTrue(xml.contains("MessageSuccess=\"true\""));
+        assertTrue(xml.contains("<ra:ActiveEnergyUnit>Wh</ra:ActiveEnergyUnit>"));
+        assertTrue(xml.contains("<ra:ReactiveEnergyUnit>varh</ra:ReactiveEnergyUnit>"));
+        assertFalse(xml.contains("<ra:Gas>"));
+    }
+
+    @Test
+    void a_device_listed_as_gas_gets_a_gas_reading() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_4_1_1), java.util.Set.of("00-DB-12-34-56-78-90-A0"));
+
+        assertTrue(xml.contains("<ra:Value>12.345</ra:Value><ra:Unit>m3</ra:Unit>"));
+        assertFalse(xml.contains("<ra:Electricity>"));
+    }
+
+    @Test
+    void the_device_log_response_goes_through_the_broker_with_the_supplementary_fields() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_8_9), java.util.Set.of());
+
+        assertTrue(xml.contains("<ra:BusinessOriginatorID>00-DB-12-34-56-78-90-A2</ra:BusinessOriginatorID>"));
+        assertTrue(xml.contains("<ra:BusinessTargetID>" + DspMessages.ACCESS_CONTROL_BROKER + "</ra:BusinessTargetID>"));
+        assertTrue(xml.contains("<ra:SupplementaryRemotePartyID>90-B3-D5-1F-30-01-00-01</ra:SupplementaryRemotePartyID>"));
+        assertTrue(xml.contains("<ra:SupplementaryRemotePartyCounter>1000</ra:SupplementaryRemotePartyCounter>"));
+        assertEquals(2, xml.split("<ra:CHFDeviceLogEntry>", -1).length - 1);
+    }
+
+    @Test
+    void tampering_a_response_flips_message_success() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_4_1_1), java.util.Set.of());
+
+        assertTrue(DspMessages.tamper(xml).contains("MessageSuccess=\"false\""));
+    }
 }

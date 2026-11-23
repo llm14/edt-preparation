@@ -130,6 +130,7 @@ services:
     environment:
       EDT_RESPONSE_LISTENER_URL: http://response-listener:8084/duis/responses
       EDT_RESPONSE_DELAY_SECONDS: "5"
+      EDT_GAS_DEVICES: "EE-FF-01-02-03-04-07-A0"   # comma-separated device IDs that are gas meters (a 4.1.1 Response for them is a gas reading); this one is the GSME of samples/manifests/three-types.csv
       EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
       EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
     volumes:

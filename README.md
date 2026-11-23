@@ -652,7 +652,7 @@ when Temporal is down), then dropped.
 |---|---|
 | `dcc-tools/dsp-simulator/.../DspSimulator.java` | HTTP server: answers at once, schedules the asynchronous messages. |
 | `.../DeviceBehaviour.java` | Behaviour from the device ID. |
-| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the PLACEHOLDER sync response, Response and DCC Alert. |
+| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the real Response (MMC 5.5: electricity or gas for 4.1.1, device log for 8.9; gas for the devices in `EDT_GAS_DEVICES`) and the PLACEHOLDER sync response and DCC Alert. |
 | `orchestrator/.../adapter/DuisSenderActivityImpl.java` | Posts once with the JDK `HttpClient`, reads the sync response. HTTP error -> exception. |
 | `orchestrator/.../infrastructure/TemporalWorker.java` | Two workers: `orchestrator` (workflows, builder) and `duis-send` (sender). |
 
@@ -702,7 +702,7 @@ The HTTP status tells the gateway whether to retry:
 |---|---|
 | `response-listener/.../entity/ServiceRequestWorkflowId.java` | The rule Request ID -> workflow ID. |
 | `.../usecase/RouteDspMessage.java` | read -> (DSP signature check, later) -> workflow ID -> signal. |
-| `.../adapter/XmlDspMessageReader.java` | Reads `Response` / `DCCAlert` (PLACEHOLDER XML), refuses DTDs. |
+| `.../adapter/XmlDspMessageReader.java` | Reads the real `GBCSResponse` (rebuilds the Request ID from its header; through the hub from the supplementary fields) and the `DCCAlert` (PLACEHOLDER XML); refuses a device alert, a placeholder `Response` and DTDs. |
 | `.../adapter/TemporalWorkflowSignaller.java` | `client.newUntypedWorkflowStub(id).signal("DspMessage", payload)`. `WorkflowNotFoundException` = orphan. |
 | `.../adapter/DspMessageResource.java` | `POST /duis/responses`; maps the result to the HTTP status; logs. |
 
@@ -824,15 +824,15 @@ to its caller (the Flow, later). Facts are the values from the Response that the
 
 ```
 Service Request workflow --DecodeResponse(srv, Response)--> ResponseDecoderActivity --> ResponseDecoder port
-                         <--Facts {InstantaneousImportRegister=12345.6}--
-outcome: {"status":"RESPONDED","facts":{"values":{"InstantaneousImportRegister":"12345.6"}}, ...}
+                         <--Facts {MessageSuccess=true, ActiveImportRegister=10, ...}--
+outcome: {"status":"RESPONDED","facts":{"values":{"ActiveImportRegister":"10","ActiveImportRegister.Unit":"Wh",...,"MessageSuccess":"true"}}, ...}
 ```
 
 | File | What it does |
 |---|---|
 | `orchestrator/.../entity/Facts.java` | Name -> value, sorted, immutable. |
 | `.../usecase/ResponseDecoder.java` | The port. In the model this is **Parsec** (CSW software, GBCS decoding), which we do not have. |
-| `.../adapter/PlaceholderResponseDecoder.java` | PLACEHOLDER: each simple element of the placeholder Response `Body` becomes a Fact. |
+| `.../adapter/RealResponseDecoder.java` | Reads the real decoded Response (MMC XML, what Parsec yields) of SRV 4.1.1 and 8.9 into Facts (table below). Written from the released RTDS 4.10.0 examples. |
 | `.../adapter/ResponseDecoderActivityImpl.java` | Activity `DecodeResponse`; logs `response-decoded` (the model's "each Response decoded"); a payload it cannot decode fails with non-retryable `ResponseNotDecodable`. |
 | `.../adapter/ServiceRequestWorkflowImpl.java` | After the Response: decode, then return `RESPONDED` with the Facts, or `DECODE_FAILED`. |
 
@@ -842,6 +842,18 @@ Changes:
 - New status `DECODE_FAILED`: the device answered, but the Response could not be decoded. It is not sent again.
 - Failure details now show the original message (for example A7: "DSP signature on the synchronous response is not
   valid: signature does not match"), without Temporal's `message='...', type='...'` wrapper.
+
+The Facts (flat `name -> text`):
+
+| SRV, content | Facts |
+|---|---|
+| 4.1.1, electricity meter | `ActiveImportRegister`, `ReactiveImportRegister` (and `SecondaryActiveImportRegister` on a twin-element meter), each with `<name>.Unit` |
+| 4.1.1, gas meter | `ConsumptionRegister` and `ConsumptionRegister.Unit` |
+| 8.9, hub | `CHFDeviceLog.<deviceId>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` for each device in the log |
+| any | `MessageSuccess`; when it is `false` also `DebugSummary` (the distinct non-success COSEM and ZigBee result strings, comma-separated). A value the Response lacks gives no Fact. |
+
+`MessageSuccess=false` is recorded, not judged: the Service Request stays `RESPONDED` (design D5). The Response is the **decoded MMC XML**, confirmed as what the DSP delivers.
+The DSP simulator answers 4.1.1 with an electricity reading, or a gas reading for the device IDs in `EDT_GAS_DEVICES` (a comma-separated list; Compose and the dcc-tools chart set `EE-FF-01-02-03-04-07-A0`, the GSME of `samples/manifests/three-types.csv`).
 
 To confirm with DCC / the lead: which Facts each SRV yields (depends on the final Flows) and how Parsec is called. **[CONFIRM]**
 

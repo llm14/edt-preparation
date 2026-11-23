@@ -46,6 +46,7 @@ missing, and `deploy/edt.sh` passes them.
 | `dspSimulator.image` | `edt/dsp-simulator:local` | Built by `dcc-tools`; `deploy/edt.sh` loads it into the cluster node |
 | `dspSimulator.responseListenerUrl` | `http://response-listener.edt.svc.cluster.local:8084/duis/responses` | Where the simulator sends the delayed Responses |
 | `dspSimulator.responseDelaySeconds` | `5` | How long the simulator waits before it sends a Response |
+| `dspSimulator.gasDevices` | `EE-FF-01-02-03-04-07-A0` | Comma-separated device IDs that are gas meters: a 4.1.1 Response for them is a gas reading (the default is electricity). Set as `EDT_GAS_DEVICES` |
 | `dspSimulator.keySecret` | `dsp-signing-key` | Name of the Secret that holds the DSP's private key (file `dsp-signing.p12`) |
 | `dspSimulator.keystorePassword` | `edt-test-only` | Password of that key store (test only) |
 | `temporal.serverImage` | `temporalio/server:1.32.2` | Temporal Server image |

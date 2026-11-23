@@ -42,7 +42,7 @@ Compose and IntelliJ. Checked on 2026-11-19 (the OpenSpec change `local-kubernet
 | Service Request history | `TimerStarted` (the 2-minute wait), then `WorkflowExecutionSignaled` 5 s later (the simulator's delay), then `TimerCanceled`: the timeout never fires |
 | Response Listener | "DSP message delivered to its Service Request workflow", about 50 ms before "Service Request ended" (an Orchestrator line with `event.action` `service-request-ended`, `edt.request_id` and `edt.status` `RESPONDED` as top-level fields) |
 | Simulator | `behaviour=RESPOND`, `delivered ... attempt=1` (first try) |
-| Kafka | 1 `FlowStep` (`status` RESPONDED, fact `InstantaneousImportRegister`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
+| Kafka | 1 `FlowStep` (`status` RESPONDED, facts `ActiveImportRegister`, `ReactiveImportRegister` (each with `.Unit`) and `MessageSuccess`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
 | Time | Batch started 15:06:22, ended 15:06:29: about 7 s from upload to the last event |
 
 **What is different from this manual**
@@ -205,7 +205,7 @@ Keep the pauses in this app short (the simulator retries every 3 s, 5 times, the
 |---|---|---|---|
 | 39 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:137` (`onDspMessage`) | the signal handler adds to a queue |
 | 40 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:114` (`messages.poll`) | Response vs DCC Alert (N12, N13 fail it) |
-| 41 | orchestrator | `adapter/ResponseDecoderActivityImpl.java:29` (`decoder.decode`) | Response to Facts (placeholder for Parsec) |
+| 41 | orchestrator | `adapter/ResponseDecoderActivityImpl.java:29` (`decoder.decode`) | the real MMC Response to Facts (`RealResponseDecoder`; stands for Parsec) |
 
 ### Step 11: Flow ends, Orchestrator → Kafka
 

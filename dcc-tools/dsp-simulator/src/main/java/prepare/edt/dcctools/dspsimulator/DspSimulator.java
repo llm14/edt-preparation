@@ -11,6 +11,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,6 +34,7 @@ import java.util.concurrent.TimeUnit;
  *   EDT_PORT                   HTTP port (default 8090)
  *   EDT_RESPONSE_LISTENER_URL  where to post Responses and DCC Alerts
  *   EDT_RESPONSE_DELAY_SECONDS delay before each asynchronous message (default 5): the device is not always listening
+ *   EDT_GAS_DEVICES            comma-separated device IDs that are gas meters (a 4.1.1 Response for them is a gas reading)
  *   EDT_DSP_KEYSTORE           PKCS#12 file with the DSP's signing key (written by kms-setup)
  *   EDT_DSP_KEYSTORE_PASSWORD  its password
  */
@@ -44,11 +48,13 @@ public final class DspSimulator {
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private final DspSigner signer;
+    private final Set<String> gasDevices;
 
-    DspSimulator(URI responseListener, Duration responseDelay, DspSigner signer) {
+    DspSimulator(URI responseListener, Duration responseDelay, DspSigner signer, Set<String> gasDevices) {
         this.responseListener = responseListener;
         this.responseDelay = responseDelay;
         this.signer = signer;
+        this.gasDevices = gasDevices;
     }
 
     public static void main(String[] args) throws Exception {
@@ -60,7 +66,9 @@ public final class DspSimulator {
         var simulator = new DspSimulator(
                 URI.create(env("EDT_RESPONSE_LISTENER_URL", "http://response-listener:8084/duis/responses")),
                 Duration.ofSeconds(Long.parseLong(env("EDT_RESPONSE_DELAY_SECONDS", "5"))),
-                signer);
+                signer,
+                Arrays.stream(env("EDT_GAS_DEVICES", "").split(",")).map(String::trim).filter(d -> !d.isEmpty())
+                        .collect(Collectors.toUnmodifiableSet()));
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
         server.createContext("/duis/service-requests", simulator::handleServiceRequest);
@@ -100,17 +108,18 @@ public final class DspSimulator {
         reply(exchange, 200, "application/xml", syncResponse);
 
         if (accepted && !behaviour.tamperSync) {
-            scheduleAsyncMessages(request.requestId(), behaviour);
+            scheduleAsyncMessages(request, behaviour);
         }
     }
 
     /** The asynchronous part: each message after responseDelay, one after the other. */
-    private void scheduleAsyncMessages(String requestId, DeviceBehaviour behaviour) {
+    private void scheduleAsyncMessages(DspMessages.ServiceRequest request, DeviceBehaviour behaviour) {
+        String requestId = request.requestId();
         long delay = 0;
         for (String message : behaviour.asyncMessages) {
             delay += responseDelay.toMillis();
             String xml = signer.sign("RESPONSE".equals(message)
-                    ? DspMessages.response(requestId)
+                    ? DspMessages.response(request, gasDevices)
                     : DspMessages.dccAlert(requestId, message));
             if (behaviour.tamperAsync) {
                 xml = DspMessages.tamper(xml);
