@@ -616,7 +616,7 @@ released Reference Test Data Set (RTDS 4.10.0, folder `4.1.1_ECS17b` and `8.9_CC
 
 | Point | What it means |
 |---|---|
-| Five SRVs | The builder and the signer know five SRVs (table below). The placeholder Flow still sends **4.1.1** to meters and **8.9** to a Communications Hub; the draft Flows of `two-draft-flows` will send 8.9 and 6.30 (hub), 6.2.9 and 11.2 (meter). 8.9 replaced the placeholder 8.2, for which no Response is released. |
+| Five SRVs | The builder and the signer know five SRVs (table below). The draft Flows send 8.9 then 6.30 (hub) and 6.2.9 then 11.2 (meter); no Flow sends 4.1.1 any more, but it stays buildable, signable and decodable. 8.9 replaced the placeholder 8.2, for which no Response is released. |
 | No device type in the request | The signer's policy checks "device type allowed for the SRV" (model 100.010), so the Orchestrator gives the device type to the `Sign` activity as a second argument. The originator is the first part of the Request ID. |
 | Partial schema | `duis-signer/src/main/resources/schema/service-request.xsd` is written from the examples and says so: it is **not** the DUIS XSD, which DCC has not provided. It accepts only the five request elements below, command variant 1, and an unsigned request. |
 | Still placeholder | The synchronous response, the Response and the DCC Alerts the simulator writes (groups 3 to 5 replace the Response). The request Request ID and the counter (workflow time) are unchanged. |
@@ -962,7 +962,12 @@ Batch  (ID batch-<bucket>/<key>/<version>, from Batch Ingest)
              returns devices, invalid rows, Verdict counts
   every pages-per-run Pages: wait for them, continue as new carrying (next Page, offset, counts)
   end: Batch result  (logged; published to Kafka in a later step)
-Flow (PLACEHOLDER): one ServiceRequest child (8.9 hubs, 4.1.1 meters) -> RESPONDS / NO_RESPONSE / NOT_DIAGNOSED
+Flow (draft Flows from the Flow Catalogue activity, named by the row's flow column):
+     refused (unknown Flow, or a device type it does not take): nothing sent -> NOT_DIAGNOSED
+     per step: one ServiceRequest child with its own Request ID; FlowStep event (<flow workflow id>/step-N);
+               goes on only while the step ended RESPONDED
+     Verdict: RESPONDS (at least one step got a Response) / NO_RESPONSE (first step timed out or N12/N13) / NOT_DIAGNOSED
+     then one DeviceResult event
 ```
 
 | File (under `orchestrator/src/main/java/prepare/edt/orchestrator/`) | What |
@@ -973,8 +978,22 @@ Flow (PLACEHOLDER): one ServiceRequest child (8.9 hubs, 4.1.1 meters) -> RESPOND
 | `adapter/ManifestReaderActivityImpl.java` | Logs each invalid row (`manifest-row-invalid`, row number) and each Page read. Not a Manifest: non-retryable `NotAManifest`. |
 | `adapter/BatchWorkflowImpl.java` | Pages, the `PageRead` signal, continue-as-new, query `progress` (Temporal UI, Queries tab). |
 | `adapter/PageWorkflowImpl.java` | Reads, signals the Batch, runs the Flows with a limit. |
-| `adapter/PlaceholderFlowWorkflowImpl.java` | PLACEHOLDER until the Flow Catalogue (010.020). |
+| `adapter/FlowWorkflowImpl.java` | The Flow (workflow type `Flow`): looks the Flow up, refuses a row it cannot run (log event `flow-refused`, Verdict `NOT_DIAGNOSED`, no request, the workflow does not fail), runs the steps one after the other (Request ID counter strictly increasing inside the Flow), stops at the first step that is not `RESPONDED`, decides the Verdict (`verdictOf`), publishes one `FlowStep` per step and one `DeviceResult`, and logs `flow-ended` with `edt.flow` and `edt.steps`. |
+| `entity/Flow.java`, `entity/FlowCatalogue.java` | The Flow Catalogue (model 010.020) as data: `Flow(name, steps)`, `Step(srv, deviceTypes)`, and the two **draft** Flows. This is where a Flow is defined. |
+| `adapter/FlowCatalogueActivity.java`, `FlowCatalogueActivityImpl.java` | Activity `LookupFlow`: returns the Flow, or `found=false` for a name the catalogue does not have (a normal result, not a failure). Called by `FlowWorkflowImpl` for each device. |
 | `entity/FairnessKey.java` | Fix found live: Temporal refuses a fairness key over **64 bytes**. A longer Batch ID becomes its SHA-256 (base64url, 43 characters). |
+
+The two draft Flows (`entity/FlowCatalogue.java`; written from DCC's list of candidate Service Requests in
+`samples/possible_flows.csv`, see `samples/draft_flows.md`; **[CONFIRM]** DCC provides the three approved Flows and their names):
+
+| Flow | Device types | Steps |
+|---|---|---|
+| `hub-triage` | CHF | SRV 8.9 Read Device Log, then SRV 6.30 Read CHF Sub GHz Configuration |
+| `meter-triage` | ESME, GSME | SRV 6.2.9 Read Device Configuration (Payment Mode), then SRV 11.2 Read Firmware Version |
+
+To add a Flow, add an entry to the map in `FlowCatalogue` and make sure the builder, the signer's schema and allowlist, the decoder and
+the simulator know its SRVs (see the table of SRVs above). Names are case-sensitive. The lookup is an **activity** on purpose: its result is
+recorded in the workflow history, so a Flow that is running when the catalogue changes keeps the steps it was given.
 
 Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `rows-per-page=2`, `pages-at-a-time=2`,
 `flows-per-page=2`, `pages-per-run=2`, `read-chunk-bytes=65536`. **[CONFIRM]** production values.
@@ -982,7 +1001,7 @@ Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `r
 **[INFERRED]** The model says the Page reads its rows, but the Batch needs the next Page's offset to keep several Pages
 running. So the Page signals it back (`PageRead`) as soon as it has read. The model does not draw this.
 
-Verified with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7):
+Verified with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7). **This run was made with the old single-step Flow** (the Service Request column is the one request it sent). With the draft Flows the same Verdicts follow from the rule in `FlowWorkflowImpl.verdictOf` (checked in `FlowWorkflowTest`), but a responding device now runs two steps; the cluster run with the draft Flows is task 5.2 of `two-draft-flows`:
 
 | Device | Service Request | Verdict |
 |---|---|---|
@@ -1045,7 +1064,7 @@ Read a topic (partition, key, headers, value):
 MSYS_NO_PATHCONV=1 docker run --rm --network edt apache/kafka:4.1.0 /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092 --topic edt.device-results --from-beginning --timeout-ms 8000   --property print.partition=true --property print.key=true --property print.headers=true
 ```
 
-Verified with the sample Manifest: 11 messages (5 steps, 5 device results, 1 Batch result). A device result:
+Verified with the sample Manifest, **with the old single-step Flow** (with the draft Flows a responding device gives two step events; re-checked in task 5.2 of `two-draft-flows`): 11 messages (5 steps, 5 device results, 1 Batch result). A device result:
 ```
 Partition:1  event-id:batch-.../row-1,event-type:DeviceResult  00-DB-12-34-56-78-90-A0
 {"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-90-A0","rowNumber":1,"flow":"flow-1","verdict":"RESPONDS"}

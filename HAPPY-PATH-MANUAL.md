@@ -42,7 +42,7 @@ Compose and IntelliJ. Checked on 2026-11-19 (the OpenSpec change `local-kubernet
 | Service Request history | `TimerStarted` (the 2-minute wait), then `WorkflowExecutionSignaled` 5 s later (the simulator's delay), then `TimerCanceled`: the timeout never fires |
 | Response Listener | "DSP message delivered to its Service Request workflow", about 50 ms before "Service Request ended" (an Orchestrator line with `event.action` `service-request-ended`, `edt.request_id` and `edt.status` `RESPONDED` as top-level fields) |
 | Simulator | `behaviour=RESPOND`, `delivered ... attempt=1` (first try) |
-| Kafka | 1 `FlowStep` (`status` RESPONDED, facts `ActiveImportRegister`, `ReactiveImportRegister` (each with `.Unit`) and `MessageSuccess`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
+| Kafka (observed with the old single-step Flow, SRV 4.1.1, before `two-draft-flows`; a device now gets two `FlowStep` events, see step 11) | 1 `FlowStep` (`status` RESPONDED, facts `ActiveImportRegister`, `ReactiveImportRegister` (each with `.Unit`) and `MessageSuccess`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
 | Time | Batch started 15:06:22, ended 15:06:29: about 7 s from upload to the last event |
 
 **What is different from this manual**
@@ -141,7 +141,7 @@ Look in the Temporal UI: workflow `batch-edt-manifests/one-device.csv/<version>`
 | 17 | orchestrator | `adapter/S3ManifestBytes.java:23` (`getObjectAsBytes`) | the `Range: bytes=...` header (line 27) |
 | 18 | orchestrator | `adapter/PageWorkflowImpl.java:50` (`pageRead` signal) | the Page tells the Batch where the next Page starts (the inferred signal, not in the model) |
 | 19 | orchestrator | `adapter/PageWorkflowImpl.java:62` (`startFlow`) | one Flow per row |
-| 20 | orchestrator | `adapter/PlaceholderFlowWorkflowImpl.java:33` (`diagnoseDevice`) | `srv` chosen from the device type; the Request ID |
+| 20 | orchestrator | `adapter/FlowWorkflowImpl.java:42` (`diagnoseDevice`), `:43` (`catalogue.lookup`) | the Flow named in the row is looked up in the catalogue (an unknown Flow or a device type it does not take is `NOT_DIAGNOSED`, nothing sent); then, per step, the `srv` from the catalogue and a new Request ID (`:66` starts the Service Request) |
 
 ### Step 6: Service Request workflow: build, sign
 
@@ -160,8 +160,10 @@ Look in the Temporal UI: workflow `batch-edt-manifests/one-device.csv/<version>`
 | 29 | duis-signer | `usecase/SignServiceRequest.java:54` (`auditLog.record`), `adapter/EcsAuditLog.java:19` | one audit event per decision (`edt.audit` logger) |
 | 30 | orchestrator | `adapter/ServiceRequestWorkflowImpl.java:89` (after the line) | `signed.status()`, `signed.signedServiceRequest()` |
 
-The request is a real DUIS 5.5 request since the change `real-duis-messages` (group 1): SRV 4.1.1 for meters, SRV 8.9 for a
-Communications Hub, written from the released examples (RTDS). The schema is a partial one, not the DUIS XSD. The synchronous
+The request is a real DUIS 5.5 request since the change `real-duis-messages` (group 1), written from the released examples (RTDS).
+Since `two-draft-flows` the SRV comes from the Flow Catalogue: `hub-triage` sends 8.9 and then 6.30 to a Communications Hub,
+`meter-triage` sends 6.2.9 and then 11.2 to a meter (the two Flows are drafts; SRV 4.1.1 is still built but no Flow sends it).
+The Flow sends the second request only after the first got a Response, and each step has its own Request ID. The schema is a partial one, not the DUIS XSD. The synchronous
 response, the Response and the DCC Alerts of the simulator are still placeholders at this point.
 
 ### Step 7: Orchestrator → DSP HTTPS Gateway (send once, check the answer)
@@ -209,11 +211,13 @@ Keep the pauses in this app short (the simulator retries every 3 s, 5 times, the
 
 ### Step 11: Flow ends, Orchestrator → Kafka
 
-**Purpose.** This is the output of the EDT, and the reason it exists: people and other systems use the results to decide an action, for example sending someone to a property. For each device the Flow produces a Verdict (the device responds, or it does not). The Orchestrator publishes three kinds of event to Kafka: one for each step of each Flow, one for the result of each device, and one for the result of each Batch. It is a producer only. Events are keyed by device, so all events of one device land in one partition and stay in order. Each event carries an ID so that consumers can drop duplicates, because a retried activity can publish the same event twice. The EDT never reads from Kafka.
+**Purpose.** This is the output of the EDT, and the reason it exists: people and other systems use the results to decide an action, for example sending someone to a property. For each device the Flow produces a Verdict (the device responds, or it does not). The Orchestrator publishes three kinds of event to Kafka: one for each step of each Flow, one for the result of each device, and one for the result of each Batch.
+
+With the draft Flows a device that answers both steps gives **two** step events and one device result. The Flow stops at the first step that gets no Response, so a silent device gives one step event (`TIMED_OUT`). The Verdict is `RESPONDS` if at least one step got a Response (a Response with `MessageSuccess` false counts), otherwise `NO_RESPONSE` if the first step timed out or got a DCC Alert N12 or N13, otherwise `NOT_DIAGNOSED`. [CONFIRM] the rule with DCC. It is a producer only. Events are keyed by device, so all events of one device land in one partition and stay in order. Each event carries an ID so that consumers can drop duplicates, because a retried activity can publish the same event twice. The EDT never reads from Kafka.
 
 | # | App | File:line | What to inspect |
 |---|---|---|---|
-| 42 | orchestrator | `adapter/PlaceholderFlowWorkflowImpl.java:52` and `:55` | Flow step event, then device result; event IDs come from the workflow ID |
+| 42 | orchestrator | `adapter/FlowWorkflowImpl.java:71` (`publishFlowStep`, once per step run) and `:86` (`publishDeviceResult`) | one step event per step, as it ends (`<flow workflow id>/step-1`, `/step-2`), then one device result with the Verdict (`verdictOf`, `:91`); event IDs come from the workflow ID |
 | 43 | orchestrator | `adapter/ResultPublisherActivityImpl.java:46` (`publisher.publish`) | topic, key (device ID), event ID, JSON |
 | 44 | orchestrator | `adapter/KafkaEventPublisher.java:37` (`producer.send(...).get`) | waits for the broker (acks=all) |
 | 45 | orchestrator | `adapter/BatchWorkflowImpl.java:78` (`publishBatchResult`), after `:73` | the Batch result (key = Batch ID) |
@@ -293,7 +297,7 @@ The names in **bold** are the boxes in the model.
 10. The **Orchestrator** is the app that does the work. Temporal hands it the new Batch.
 11. The Orchestrator cuts the Manifest into small groups of devices called **Pages**.
 12. For each Page, it reads just those rows from the bucket.
-13. For each device in the Page, it starts a **Flow**: the diagnosis of that one device. In our version, the Flow is simple: ask the device one question.
+13. For each device in the Page, it starts a **Flow**: the diagnosis of that one device. In our version there are two draft Flows, each a short list of questions: one for a Communications Hub and one for a meter. The Flow is named in the Manifest row.
 
 *Asking the device*
 14. The Flow creates a **Service Request**, which is the question for the device.
@@ -313,8 +317,8 @@ The names in **bold** are the boxes in the model.
 24. The Orchestrator reads the answer and turns it into simple facts, like "meter reads 12345".
 
 *Finishing*
-25. The Flow turns that into a verdict for the device: "responds", or "doesn't respond". If there was no answer, or the DSP sent an alert, the verdict is "doesn't respond".
-26. The Orchestrator publishes the device's result to **Kafka**. It does the same for each step.
+25. If the answer came, the Flow asks its next question (steps 14 to 24 again, with a new Request ID) and stops at the first question that gets no answer. It then turns what happened into a verdict for the device: "responds" if at least one answer came, or "doesn't respond" if the first question got no answer or the DSP sent an alert.
+26. The Orchestrator publishes each step's result to **Kafka** as it ends, and then the device's result.
 27. When every Page is done, the Batch is finished. The Orchestrator publishes one last message to Kafka: the totals for the whole Batch.
 28. Someone at DCC reads the results and decides what to do, for example send an engineer to a house where the device really does not respond.
 

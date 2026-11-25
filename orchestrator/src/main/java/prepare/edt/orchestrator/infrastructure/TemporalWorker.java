@@ -16,9 +16,10 @@ import prepare.edt.orchestrator.adapter.BatchWorkflow;
 import prepare.edt.orchestrator.adapter.BatchWorkflowImpl;
 import prepare.edt.orchestrator.adapter.DspSignatureVerifier;
 import prepare.edt.orchestrator.adapter.DuisSenderActivityImpl;
+import prepare.edt.orchestrator.adapter.FlowCatalogueActivityImpl;
+import prepare.edt.orchestrator.adapter.FlowWorkflowImpl;
 import prepare.edt.orchestrator.adapter.ManifestReaderActivityImpl;
 import prepare.edt.orchestrator.adapter.PageWorkflowImpl;
-import prepare.edt.orchestrator.adapter.PlaceholderFlowWorkflowImpl;
 import prepare.edt.orchestrator.adapter.RealResponseDecoder;
 import prepare.edt.orchestrator.adapter.RequestBuilderActivityImpl;
 import prepare.edt.orchestrator.adapter.ResponseDecoderActivityImpl;
@@ -79,15 +80,15 @@ public class TemporalWorker {
         orchestrator.registerWorkflowImplementationFactory(BatchWorkflow.class,
                 () -> new BatchWorkflowImpl(batchSettings));
         orchestrator.registerWorkflowImplementationTypes(PageWorkflowImpl.class,
-                // PLACEHOLDER Flow: one Service Request per device, until the Flow Catalogue (model 010.020).
-                PlaceholderFlowWorkflowImpl.class);
+                // The Flow runs the steps of the Flow Catalogue (model 010.020); the two Flows in it are drafts.
+                FlowWorkflowImpl.class);
         orchestrator.registerWorkflowImplementationFactory(SignProbeWorkflow.class,
                 () -> new SignProbeWorkflowImpl(signingQueue));
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(signingQueue, sendQueue, responseTimeout));
         // PLACEHOLDER decoder: Parsec (CSW software) goes behind the same ResponseDecoder port.
         orchestrator.registerActivitiesImplementations(manifestReader, resultPublisher, new RequestBuilderActivityImpl(),
-                new ResponseDecoderActivityImpl(new RealResponseDecoder()));
+                new ResponseDecoderActivityImpl(new RealResponseDecoder()), new FlowCatalogueActivityImpl());
 
         // setMaxTaskQueueActivitiesPerSecond: a limit for the whole task queue, enforced by the Temporal Server,
         // so it holds across all replicas. (setMaxWorkerActivitiesPerSecond would limit each worker alone.)
