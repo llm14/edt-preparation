@@ -81,9 +81,9 @@ final class DspMessages {
      * meter when it is in gasDevices, an electricity meter otherwise.
      */
     static String response(ServiceRequest request, Set<String> gasDevices) {
-        boolean deviceLog = "8.9".equals(request.srv());
+        boolean viaHub = isAnsweredByTheHub(request.srv());
         String header = "<ra:BusinessOriginatorID>" + request.targetDevice() + "</ra:BusinessOriginatorID>"
-                + (deviceLog
+                + (viaHub
                         ? "<ra:BusinessTargetID>" + ACCESS_CONTROL_BROKER + "</ra:BusinessTargetID>"
                                 + "<ra:OriginatorCounter>1300</ra:OriginatorCounter>"
                                 + "<ra:SupplementaryRemotePartyID>" + request.originator() + "</ra:SupplementaryRemotePartyID>"
@@ -94,6 +94,9 @@ final class DspMessages {
                 + "<ra:ServiceReferenceVariant>" + request.srv() + "</ra:ServiceReferenceVariant>";
         String content = switch (request.srv()) {
             case "8.9" -> deviceLog();
+            case "6.30" -> subGhzConfiguration();
+            case "6.2.9" -> paymentMode();
+            case "11.2" -> firmwareVersion();
             default -> gasDevices.contains(request.targetDevice()) ? gasRegisters() : electricityRegisters();
         };
         return "<ra:GBCSResponse xmlns:ra=\"" + RESPONSE_NAMESPACE + "\" schemaVersion=\"5.5\">"
@@ -102,7 +105,44 @@ final class DspMessages {
                 + "</ra:GBCSResponse>";
     }
 
-    /** The Service Reference of a variant: its first two parts (4.1.1 is 4.1, 8.9 is 8.9). */
+    /** The Communications Hub itself answers 8.9 (device log) and 6.30 (Sub GHz configuration), as in RTDS CCS06 and DBCH03. */
+    private static boolean isAnsweredByTheHub(String srv) {
+        return "8.9".equals(srv) || "6.30".equals(srv);
+    }
+
+    /** RTDS ECS26j (6.2.9). */
+    private static String paymentMode() {
+        return "<ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess=\"true\">"
+                + "<ra:PaymentMode>Prepayment</ra:PaymentMode></ra:ReadDeviceConfigurationPaymentModeRsp>";
+    }
+
+    /** RTDS ECS52 (11.2). */
+    private static String firmwareVersion() {
+        return "<ra:ReadFirmwareVersionRsp MessageSuccess=\"true\"><ra:FirmwareVersion>0123ABCD</ra:FirmwareVersion></ra:ReadFirmwareVersionRsp>";
+    }
+
+    /** RTDS DBCH03 (6.30): the channel lists, then the thresholds. */
+    private static String subGhzConfiguration() {
+        return "<ra:ReadCHFSubGHzConfigurationRsp MessageSuccess=\"true\">"
+                + "<ra:LowerBandSubGHzChannels0To26><ra:Channel0/><ra:Channel1/></ra:LowerBandSubGHzChannels0To26>"
+                + "<ra:LowerBandSubGHzChannels27To34><ra:Channel27/><ra:Channel28/></ra:LowerBandSubGHzChannels27To34>"
+                + "<ra:LowerBandSubGHzChannels35To61><ra:Channel35/><ra:Channel36/></ra:LowerBandSubGHzChannels35To61>"
+                + "<ra:UpperBandSubGHzChannels0To26><ra:Channel0/><ra:Channel1/></ra:UpperBandSubGHzChannels0To26>"
+                + "<ra:NormalLimitedDutyCycleThreshold>1.2</ra:NormalLimitedDutyCycleThreshold>"
+                + "<ra:LimitedCriticalDutyCycleThreshold>2.0</ra:LimitedCriticalDutyCycleThreshold>"
+                + "<ra:MaximumSubGHzChannelChangesPerWeek>4</ra:MaximumSubGHzChannelChangesPerWeek>"
+                + "<ra:GSMECurfew>6</ra:GSMECurfew>"
+                + "<ra:ChannelQuieterThreshold>6</ra:ChannelQuieterThreshold>"
+                + "<ra:ChannelNoisierThreshold>10</ra:ChannelNoisierThreshold>"
+                + "<ra:NonGSMEPoorCommsPercentageThreshold>50.50</ra:NonGSMEPoorCommsPercentageThreshold>"
+                + "<ra:NonGSMEPoorCommsMeasurementPeriods>125</ra:NonGSMEPoorCommsMeasurementPeriods>"
+                + "<ra:LocalCHNoiseMeasurementPeriod>90</ra:LocalCHNoiseMeasurementPeriod>"
+                + "<ra:LocalCHFailurePercentage>50.00</ra:LocalCHFailurePercentage>"
+                + "<ra:LocalCHRetryPercentage>30.00</ra:LocalCHRetryPercentage>"
+                + "</ra:ReadCHFSubGHzConfigurationRsp>";
+    }
+
+    /** The Service Reference of a variant: its first two parts (4.1.1 is 4.1, 6.2.9 is 6.2, 8.9 is 8.9, 6.30 is 6.30). */
     private static String serviceReference(String srv) {
         String[] parts = srv.split("[.]");
         return parts.length < 2 ? srv : parts[0] + "." + parts[1];

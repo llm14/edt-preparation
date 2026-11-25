@@ -25,6 +25,23 @@ class XmlServiceRequestReaderTest {
             <sr:Body><sr:ReadDeviceLog/></sr:Body>\
             </sr:Request>""";
 
+    /** RTDS 6.2.9_ECS26j: Read Device Configuration (Payment Mode), service reference 6.2. */
+    static final String SRV_6_2_9 = request("6.2", "6.2.9", "ReadDeviceConfigurationPaymentMode", "00-DB-12-34-56-78-90-A0");
+
+    /** RTDS 6.30_DBCH03: Read CHF Sub GHz Configuration. */
+    static final String SRV_6_30 = request("6.30", "6.30", "ReadCHFSubGHzConfiguration", "00-DB-12-34-56-78-90-A2");
+
+    /** RTDS 11.2_ECS52: Read Firmware Version. */
+    static final String SRV_11_2 = request("11.2", "11.2", "ReadFirmwareVersion", "00-DB-12-34-56-78-90-A0");
+
+    private static String request(String serviceReference, String variant, String body, String device) {
+        return "<sr:Request xmlns:sr=\"http://www.dccinterface.co.uk/ServiceUserGateway\" schemaVersion=\"5.5\">"
+                + "<sr:Header><sr:RequestID>90-B3-D5-1F-30-01-00-01:" + device + ":1000</sr:RequestID>"
+                + "<sr:CommandVariant>1</sr:CommandVariant><sr:ServiceReference>" + serviceReference + "</sr:ServiceReference>"
+                + "<sr:ServiceReferenceVariant>" + variant + "</sr:ServiceReferenceVariant></sr:Header>"
+                + "<sr:Body><sr:" + body + "/></sr:Body></sr:Request>";
+    }
+
     final XmlServiceRequestReader reader = new XmlServiceRequestReader();
 
     @Test
@@ -45,6 +62,28 @@ class XmlServiceRequestReaderTest {
         assertEquals("8.9", request.srv());
         assertEquals("90-B3-D5-1F-30-01-00-01", request.originator());
         assertEquals("CHF", request.deviceType());
+    }
+
+    @Test
+    void reads_the_values_of_the_requests_of_the_draft_flows() {
+        ServiceRequest payment = reader.read(SRV_6_2_9, "ESME");
+        assertEquals("6.2.9", payment.srv());
+        assertEquals("ESME", payment.deviceType());
+
+        ServiceRequest subGhz = reader.read(SRV_6_30, "CHF");
+        assertEquals("6.30", subGhz.srv());
+        assertEquals("CHF", subGhz.deviceType());
+
+        ServiceRequest firmware = reader.read(SRV_11_2, "ESME");
+        assertEquals("11.2", firmware.srv());
+        assertEquals("90-B3-D5-1F-30-01-00-01", firmware.originator());
+    }
+
+    @Test
+    void refuses_a_body_with_two_request_elements_among_the_new_srvs() {
+        String twoElements = SRV_11_2.replace("<sr:ReadFirmwareVersion/>", "<sr:ReadFirmwareVersion/><sr:ReadCHFSubGHzConfiguration/>");
+
+        assertThrows(InvalidServiceRequestException.class, () -> reader.read(twoElements, "ESME"));
     }
 
     @Test

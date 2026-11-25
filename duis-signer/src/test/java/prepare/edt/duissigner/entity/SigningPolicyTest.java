@@ -16,7 +16,10 @@ class SigningPolicyTest {
     static final SigningPolicy POLICY = new SigningPolicy(Map.of(
             UserRole.OTHER_USER, new RolePolicy(OTHER_USER_ID, Map.of(
                     "4.1.1", Set.of("ESME", "GSME"),          // both roles may send 4.1.1
-                    "8.9", Set.of("CHF"))),
+                    "8.9", Set.of("CHF"),
+                    "6.2.9", Set.of("ESME", "GSME"),          // the SRVs of the draft Flows, as in application.properties
+                    "6.30", Set.of("CHF"),
+                    "11.2", Set.of("ESME", "GSME", "CHF"))),
             UserRole.REGISTERED_SUPPLIER_AGENT, new RolePolicy(RSA_USER_ID, Map.of(
                     "4.1.1", Set.of("ESME", "GSME"),
                     "6.15.1", Set.of("ESME")))));               // only the Registered Supplier Agent
@@ -37,6 +40,25 @@ class SigningPolicyTest {
     void a_communications_hub_is_allowed_for_srv_8_9() {
         assertEquals(new SigningDecision.Approved(UserRole.OTHER_USER),
                 POLICY.decide(request("8.9", OTHER_USER_ID, "CHF")));
+    }
+
+    @Test
+    void the_srvs_of_the_draft_flows_are_allowed_for_their_device_types() {
+        var other = new SigningDecision.Approved(UserRole.OTHER_USER);
+        assertEquals(other, POLICY.decide(request("6.2.9", OTHER_USER_ID, "ESME")));
+        assertEquals(other, POLICY.decide(request("6.2.9", OTHER_USER_ID, "GSME")));
+        assertEquals(other, POLICY.decide(request("6.30", OTHER_USER_ID, "CHF")));
+        assertEquals(other, POLICY.decide(request("11.2", OTHER_USER_ID, "ESME")));
+        assertEquals(other, POLICY.decide(request("11.2", OTHER_USER_ID, "GSME")));
+        assertEquals(other, POLICY.decide(request("11.2", OTHER_USER_ID, "CHF")));
+    }
+
+    @Test
+    void a_hub_only_srv_is_refused_for_a_meter_and_a_meter_srv_for_a_hub() {
+        assertEquals(new SigningDecision.Refused("device type ESME is not allowed for SRV 6.30"),
+                POLICY.decide(request("6.30", OTHER_USER_ID, "ESME")));
+        assertEquals(new SigningDecision.Refused("device type CHF is not allowed for SRV 6.2.9"),
+                POLICY.decide(request("6.2.9", OTHER_USER_ID, "CHF")));
     }
 
     @Test

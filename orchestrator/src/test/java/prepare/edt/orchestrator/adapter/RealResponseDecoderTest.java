@@ -73,6 +73,85 @@ class RealResponseDecoderTest {
                 <ra:LastCommunicationsDateTime>2014-12-31T23:40:00.00Z</ra:LastCommunicationsDateTime><ra:SubGHzLinkQuality>-54</ra:SubGHzLinkQuality></ra:CHFDeviceLogEntry>
             </ra:CHFDeviceLog></ra:ReadDeviceLogRsp>""", "");
 
+    /** ECS26j_6.2.9_SUCCESS */
+    static final String ECS26J = wrap("""
+            <ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess="true"><ra:PaymentMode>Prepayment</ra:PaymentMode></ra:ReadDeviceConfigurationPaymentModeRsp>""", "");
+
+    /** The COSEM debug information of the ECS26j, ECS52 and DBCH03 error examples: the read result is in DataAccessResult. */
+    static final String READ_FAILED_DEBUG = """
+            <ra:DebugInfo><ra:COSEMDebug><ra:COSEMResponse ResponseCode="1" Position="1">
+              <ra:DataAccessResult>hardware-fault</ra:DataAccessResult></ra:COSEMResponse></ra:COSEMDebug></ra:DebugInfo>""";
+
+    /** ECS26j_6.2.9_ERROR */
+    static final String ECS26J_ERROR = wrap("<ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess=\"false\"/>", READ_FAILED_DEBUG);
+
+    /** ECS52_11.2_SUCCESS */
+    static final String ECS52 = wrap("""
+            <ra:ReadFirmwareVersionRsp MessageSuccess="true"><ra:FirmwareVersion>0123ABCD</ra:FirmwareVersion></ra:ReadFirmwareVersionRsp>""", "");
+
+    /** ECS52_11.2_ERROR */
+    static final String ECS52_ERROR = wrap("<ra:ReadFirmwareVersionRsp MessageSuccess=\"false\"/>", READ_FAILED_DEBUG);
+
+    /** DBCH03_6.30_SUCCESS: four channel lists, then eleven thresholds */
+    static final String DBCH03 = wrap("""
+            <ra:ReadCHFSubGHzConfigurationRsp MessageSuccess="true">
+              <ra:LowerBandSubGHzChannels0To26><ra:Channel0/><ra:Channel1/></ra:LowerBandSubGHzChannels0To26>
+              <ra:LowerBandSubGHzChannels27To34><ra:Channel27/><ra:Channel28/></ra:LowerBandSubGHzChannels27To34>
+              <ra:LowerBandSubGHzChannels35To61><ra:Channel35/><ra:Channel36/></ra:LowerBandSubGHzChannels35To61>
+              <ra:UpperBandSubGHzChannels0To26><ra:Channel0/><ra:Channel1/></ra:UpperBandSubGHzChannels0To26>
+              <ra:NormalLimitedDutyCycleThreshold>1.2</ra:NormalLimitedDutyCycleThreshold>
+              <ra:LimitedCriticalDutyCycleThreshold>2.0</ra:LimitedCriticalDutyCycleThreshold>
+              <ra:MaximumSubGHzChannelChangesPerWeek>4</ra:MaximumSubGHzChannelChangesPerWeek>
+              <ra:GSMECurfew>6</ra:GSMECurfew>
+              <ra:ChannelQuieterThreshold>6</ra:ChannelQuieterThreshold>
+              <ra:ChannelNoisierThreshold>10</ra:ChannelNoisierThreshold>
+              <ra:NonGSMEPoorCommsPercentageThreshold>50.50</ra:NonGSMEPoorCommsPercentageThreshold>
+              <ra:NonGSMEPoorCommsMeasurementPeriods>125</ra:NonGSMEPoorCommsMeasurementPeriods>
+              <ra:LocalCHNoiseMeasurementPeriod>90</ra:LocalCHNoiseMeasurementPeriod>
+              <ra:LocalCHFailurePercentage>50.00</ra:LocalCHFailurePercentage>
+              <ra:LocalCHRetryPercentage>30.00</ra:LocalCHRetryPercentage>
+            </ra:ReadCHFSubGHzConfigurationRsp>""", "");
+
+    /** DBCH03_6.30_ERROR */
+    static final String DBCH03_ERROR = wrap("<ra:ReadCHFSubGHzConfigurationRsp MessageSuccess=\"false\"/>", READ_FAILED_DEBUG);
+
+    @Test
+    void paymentMode() {
+        assertEquals(Map.of("MessageSuccess", "true", "PaymentMode", "Prepayment"), decoder.decode("6.2.9", ECS26J).values());
+    }
+
+    @Test
+    void firmwareVersion() {
+        assertEquals(Map.of("MessageSuccess", "true", "FirmwareVersion", "0123ABCD"), decoder.decode("11.2", ECS52).values());
+    }
+
+    @Test
+    void subGhzConfigurationHasTheScalarThresholdsAndNoChannelFacts() {
+        Map<String, String> values = decoder.decode("6.30", DBCH03).values();
+
+        assertEquals("true", values.get("MessageSuccess"));
+        assertEquals("4", values.get("MaximumSubGHzChannelChangesPerWeek"));
+        assertEquals("6", values.get("GSMECurfew"));
+        assertEquals("50.50", values.get("NonGSMEPoorCommsPercentageThreshold"));
+        assertEquals(1 + 11, values.size(), "MessageSuccess and the eleven thresholds");
+        assertFalse(values.keySet().stream().anyMatch(name -> name.contains("Channel0") || name.contains("BandSubGHz")),
+                "the channel lists are not Facts");
+    }
+
+    @Test
+    void aFailedReadOfTheNewSrvsRecordsTheFailureAndNoValueFact() {
+        Map<String, String> failed = Map.of("MessageSuccess", "false", "DebugSummary", "hardware-fault");
+        assertEquals(failed, decoder.decode("6.2.9", ECS26J_ERROR).values());
+        assertEquals(failed, decoder.decode("11.2", ECS52_ERROR).values());
+        assertEquals(failed, decoder.decode("6.30", DBCH03_ERROR).values());
+    }
+
+    @Test
+    void aResponseOfAnotherSrvIsNotDecodedAsTheNewOnes() {
+        assertThrows(UndecodableResponseException.class, () -> decoder.decode("11.2", ECS26J));
+        assertThrows(UndecodableResponseException.class, () -> decoder.decode("6.30", ECS52));
+    }
+
     @Test
     void electricitySingleElement() {
         assertEquals(Map.of("MessageSuccess", "true",

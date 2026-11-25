@@ -114,6 +114,58 @@ class DspMessagesTest {
         assertEquals(2, xml.split("<ra:CHFDeviceLogEntry>", -1).length - 1);
     }
 
+    /** RTDS ECS26j (6.2.9, service reference 6.2), DBCH03 (6.30) and ECS52 (11.2). */
+    static final String REQUEST_6_2_9 = request("90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1001",
+            "6.2", "6.2.9", "ReadDeviceConfigurationPaymentMode", SIGNATURE);
+    static final String REQUEST_6_30 = request("90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A2:1000",
+            "6.30", "6.30", "ReadCHFSubGHzConfiguration", SIGNATURE);
+    static final String REQUEST_11_2 = request("90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000",
+            "11.2", "11.2", "ReadFirmwareVersion", SIGNATURE);
+
+    @Test
+    void the_payment_mode_response_is_a_meter_response_with_service_reference_6_2() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_6_2_9), java.util.Set.of());
+
+        assertTrue(xml.contains(HEADER_ORIGINATOR));
+        assertTrue(xml.contains("<ra:BusinessTargetID>90-B3-D5-1F-30-01-00-01</ra:BusinessTargetID>"));
+        assertTrue(xml.contains("<ra:OriginatorCounter>1001</ra:OriginatorCounter>"));
+        assertTrue(xml.contains("<ra:ServiceReference>6.2</ra:ServiceReference>"));
+        assertTrue(xml.contains("<ra:ServiceReferenceVariant>6.2.9</ra:ServiceReferenceVariant>"));
+        assertTrue(xml.contains("<ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess=\"true\">"
+                + "<ra:PaymentMode>Prepayment</ra:PaymentMode>"));
+        assertFalse(xml.contains("SupplementaryRemoteParty"), "a meter answers directly, not through the broker");
+    }
+
+    @Test
+    void the_firmware_version_response_has_the_ecs52_shape() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_11_2), java.util.Set.of());
+
+        assertTrue(xml.contains("<ra:ServiceReference>11.2</ra:ServiceReference>"));
+        assertTrue(xml.contains("<ra:OriginatorCounter>1000</ra:OriginatorCounter>"));
+        assertTrue(xml.contains("<ra:ReadFirmwareVersionRsp MessageSuccess=\"true\"><ra:FirmwareVersion>0123ABCD</ra:FirmwareVersion>"));
+        assertFalse(xml.contains("SupplementaryRemoteParty"));
+    }
+
+    @Test
+    void the_sub_ghz_response_goes_through_the_broker_with_the_supplementary_fields() throws Exception {
+        String xml = DspMessages.response(DspMessages.read(REQUEST_6_30), java.util.Set.of());
+
+        assertTrue(xml.contains("<ra:BusinessOriginatorID>00-DB-12-34-56-78-90-A2</ra:BusinessOriginatorID>"));
+        assertTrue(xml.contains("<ra:BusinessTargetID>" + DspMessages.ACCESS_CONTROL_BROKER + "</ra:BusinessTargetID>"));
+        assertTrue(xml.contains("<ra:SupplementaryRemotePartyID>90-B3-D5-1F-30-01-00-01</ra:SupplementaryRemotePartyID>"));
+        assertTrue(xml.contains("<ra:SupplementaryRemotePartyCounter>1000</ra:SupplementaryRemotePartyCounter>"));
+        assertTrue(xml.contains("<ra:ServiceReference>6.30</ra:ServiceReference>"));
+        assertTrue(xml.contains("<ra:MaximumSubGHzChannelChangesPerWeek>4</ra:MaximumSubGHzChannelChangesPerWeek>"));
+    }
+
+    @Test
+    void the_new_responses_can_be_tampered_with_after_signing() throws Exception {
+        for (String request : java.util.List.of(REQUEST_6_2_9, REQUEST_6_30, REQUEST_11_2)) {
+            String xml = DspMessages.response(DspMessages.read(request), java.util.Set.of());
+            assertTrue(DspMessages.tamper(xml).contains("MessageSuccess=\"false\""));
+        }
+    }
+
     @Test
     void tampering_a_response_flips_message_success() throws Exception {
         String xml = DspMessages.response(DspMessages.read(REQUEST_4_1_1), java.util.Set.of());

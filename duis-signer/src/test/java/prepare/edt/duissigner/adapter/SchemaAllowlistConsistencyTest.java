@@ -1,5 +1,6 @@
 package prepare.edt.duissigner.adapter;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,9 +38,27 @@ class SchemaAllowlistConsistencyTest {
     }
 
     @Test
-    void the_srvs_of_the_placeholder_flow_are_in_both() throws Exception {
-        assertTrue(srvsInSchema().containsAll(Set.of("4.1.1", "8.9")));
-        assertTrue(srvsInAllowlist().containsAll(Set.of("4.1.1", "8.9")));
+    void the_srvs_of_the_draft_flows_are_in_both() throws Exception {
+        Set<String> draftFlows = Set.of("8.9", "6.30", "6.2.9", "11.2");
+        assertTrue(srvsInSchema().containsAll(draftFlows));
+        assertTrue(srvsInAllowlist().containsAll(draftFlows));
+    }
+
+    @Test
+    void srv_4_1_1_is_still_in_both_although_no_draft_flow_sends_it() throws Exception {
+        assertTrue(srvsInSchema().contains("4.1.1"));
+        assertTrue(srvsInAllowlist().contains("4.1.1"));
+    }
+
+    @Test
+    void the_other_user_allowlist_of_the_draft_flows_has_these_device_types() throws Exception {
+        Properties properties = new Properties();
+        try (InputStream in = SchemaAllowlistConsistencyTest.class.getResourceAsStream("/application.properties")) {
+            properties.load(in);
+        }
+        assertEquals("ESME,GSME", properties.getProperty("edt.policy.roles.other-user.srvs.\"6.2.9\""));
+        assertEquals("CHF", properties.getProperty("edt.policy.roles.other-user.srvs.\"6.30\""));
+        assertEquals("ESME,GSME,CHF", properties.getProperty("edt.policy.roles.other-user.srvs.\"11.2\""));
     }
 
     static Set<String> srvsInSchema() throws Exception {

@@ -6,7 +6,7 @@
 
   What it checks, beyond the real shape of the header and the body:
     - CommandVariant is 1, the value of the non-critical read requests in the released data (Table 8 of the RTDS notes);
-    - the Body is exactly one of the request elements below (SRV 4.1.1 and SRV 8.9), empty as in the examples;
+    - the Body is exactly one of the request elements below (SRV 4.1.1, 8.9, 6.2.9, 6.30 and 11.2), empty as in the examples;
     - the request is unsigned: the signature is added by the signer after this check.
   Adding an SRV means adding its ServiceReference, its ServiceReferenceVariant and its body element here, and its
   allowlist entry in the signer's configuration.
@@ -36,6 +36,12 @@
               <xs:element name="ReadInstantaneousImportRegisters"><xs:complexType/></xs:element>
               <!-- SRV 8.9 Read Device Log -->
               <xs:element name="ReadDeviceLog"><xs:complexType/></xs:element>
+              <!-- SRV 6.2.9 Read Device Configuration (Payment Mode) -->
+              <xs:element name="ReadDeviceConfigurationPaymentMode"><xs:complexType/></xs:element>
+              <!-- SRV 6.30 Read CHF Sub GHz Configuration -->
+              <xs:element name="ReadCHFSubGHzConfiguration"><xs:complexType/></xs:element>
+              <!-- SRV 11.2 Read Firmware Version -->
+              <xs:element name="ReadFirmwareVersion"><xs:complexType/></xs:element>
             </xs:choice>
           </xs:complexType>
         </xs:element>
@@ -61,6 +67,9 @@
     <xs:restriction base="xs:string">
       <xs:enumeration value="4.1"/>
       <xs:enumeration value="8.9"/>
+      <xs:enumeration value="6.2"/>
+      <xs:enumeration value="6.30"/>
+      <xs:enumeration value="11.2"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -68,6 +77,9 @@
     <xs:restriction base="xs:string">
       <xs:enumeration value="4.1.1"/>
       <xs:enumeration value="8.9"/>
+      <xs:enumeration value="6.2.9"/>
+      <xs:enumeration value="6.30"/>
+      <xs:enumeration value="11.2"/>
     </xs:restriction>
   </xs:simpleType>
 </xs:schema>

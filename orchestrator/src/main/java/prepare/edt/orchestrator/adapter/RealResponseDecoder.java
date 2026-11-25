@@ -17,9 +17,11 @@ import prepare.edt.orchestrator.entity.Facts;
 import prepare.edt.orchestrator.usecase.ResponseDecoder;
 
 /**
- * Reads the decoded Response (MMC XML, what Parsec yields from the GBCS payload) of the two SRVs we send:
- * 4.1.1 (Read Instantaneous Import Registers, electricity and gas) and 8.9 (Read Device Log).
- * Written from the released RTDS 4.10.0 examples (ECS17b, GCS13a, CCS06). The Facts are listed in design.md D4.
+ * Reads the decoded Response (MMC XML, what Parsec yields from the GBCS payload) of the SRVs we send:
+ * 4.1.1 (Read Instantaneous Import Registers, electricity and gas), 8.9 (Read Device Log), and the three of the draft
+ * Flows: 6.2.9 (payment mode), 6.30 (CHF Sub GHz configuration) and 11.2 (firmware version).
+ * Written from the released RTDS 4.10.0 examples (ECS17b, GCS13a, CCS06, ECS26j, DBCH03, ECS52). The Facts of the first
+ * two are listed in the design of real-duis-messages (D4), those of the other three in the design of two-draft-flows (D6).
  * The device type of a 4.1.1 Response is read from the content (the Electricity or Gas element).
  */
 public class RealResponseDecoder implements ResponseDecoder {
@@ -35,7 +37,12 @@ public class RealResponseDecoder implements ResponseDecoder {
 
     private final Map<String, Decoding> decodings = Map.of(
             "4.1.1", new Decoding("ReadInstantaneousImportRegistersRsp", RealResponseDecoder::readRegisters),
-            "8.9", new Decoding("ReadDeviceLogRsp", RealResponseDecoder::readDeviceLog));
+            "8.9", new Decoding("ReadDeviceLogRsp", RealResponseDecoder::readDeviceLog),
+            "6.2.9", new Decoding("ReadDeviceConfigurationPaymentModeRsp", (response, facts) ->
+                    putIfPresent(facts, "PaymentMode", text(response, "PaymentMode"))),
+            "6.30", new Decoding("ReadCHFSubGHzConfigurationRsp", RealResponseDecoder::readScalars),
+            "11.2", new Decoding("ReadFirmwareVersionRsp", (response, facts) ->
+                    putIfPresent(facts, "FirmwareVersion", text(response, "FirmwareVersion"))));
 
     @Override
     public Facts decode(String srv, String responseXml) {
@@ -104,10 +111,26 @@ public class RealResponseDecoder implements ResponseDecoder {
         }
     }
 
-    /** The distinct COSEM and ZigBee result strings that are not a success, in order, joined with a comma. */
+    /**
+     * 6.30: every direct child that holds only text is a Fact, named after its element (the thresholds, the periods, the
+     * curfew). A child with elements inside (the channel lists) is not a Fact: the file does not say what triage needs from it.
+     */
+    private static void readScalars(Element response, Map<String, String> facts) {
+        for (Element child : children(response)) {
+            if (children(child).isEmpty()) {
+                String value = child.getTextContent().trim();
+                putIfPresent(facts, child.getLocalName(), value.isEmpty() ? null : value);
+            }
+        }
+    }
+
+    /**
+     * The distinct COSEM and ZigBee result strings that are not a success, in order, joined with a comma. The COSEM
+     * result is in ActionResult (a write or action) or DataAccessResult (a read, as in the 6.2.9, 6.30 and 11.2 examples).
+     */
     private static String debugSummary(Element root) {
         Set<String> results = new LinkedHashSet<>();
-        for (String name : List.of("ActionResult", "ZCLStatus")) {
+        for (String name : List.of("ActionResult", "DataAccessResult", "ZCLStatus")) {
             var nodes = root.getElementsByTagNameNS(NAMESPACE, name);
             for (int i = 0; i < nodes.getLength(); i++) {
                 String result = nodes.item(i).getTextContent().trim();

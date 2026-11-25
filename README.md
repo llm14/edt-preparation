@@ -616,10 +616,23 @@ released Reference Test Data Set (RTDS 4.10.0, folder `4.1.1_ECS17b` and `8.9_CC
 
 | Point | What it means |
 |---|---|
-| Two SRVs | The placeholder Flow sends **4.1.1** (Read Instantaneous Import Registers) to meters and **8.9** (Read Device Log) to a Communications Hub. 8.9 replaces the placeholder 8.2, for which no Response is released. |
+| Five SRVs | The builder and the signer know five SRVs (table below). The placeholder Flow still sends **4.1.1** to meters and **8.9** to a Communications Hub; the draft Flows of `two-draft-flows` will send 8.9 and 6.30 (hub), 6.2.9 and 11.2 (meter). 8.9 replaced the placeholder 8.2, for which no Response is released. |
 | No device type in the request | The signer's policy checks "device type allowed for the SRV" (model 100.010), so the Orchestrator gives the device type to the `Sign` activity as a second argument. The originator is the first part of the Request ID. |
-| Partial schema | `duis-signer/src/main/resources/schema/service-request.xsd` is written from the examples and says so: it is **not** the DUIS XSD, which DCC has not provided. It accepts only the two request elements, command variant 1, and an unsigned request. |
+| Partial schema | `duis-signer/src/main/resources/schema/service-request.xsd` is written from the examples and says so: it is **not** the DUIS XSD, which DCC has not provided. It accepts only the five request elements below, command variant 1, and an unsigned request. |
 | Still placeholder | The synchronous response, the Response and the DCC Alerts the simulator writes (groups 3 to 5 replace the Response). The request Request ID and the counter (workflow time) are unchanged. |
+
+The five SRVs (request element, signer allowlist of the Other User role; **PLACEHOLDER** allowlist until DCC provides the real one):
+
+| SRV | Request | Service Reference | Body element | Allowed device types |
+|---|---|---|---|---|
+| 4.1.1 | Read Instantaneous Import Registers | 4.1 | `ReadInstantaneousImportRegisters` | ESME, GSME |
+| 8.9 | Read Device Log | 8.9 | `ReadDeviceLog` | CHF |
+| 6.2.9 | Read Device Configuration (Payment Mode) | 6.2 | `ReadDeviceConfigurationPaymentMode` | ESME, GSME |
+| 6.30 | Read CHF Sub GHz Configuration | 6.30 | `ReadCHFSubGHzConfiguration` | CHF |
+| 11.2 | Read Firmware Version | 11.2 | `ReadFirmwareVersion` | ESME, GSME, CHF |
+
+Adding an SRV means a row in `RequestBuilderActivityImpl`, the schema, the allowlist (`SchemaAllowlistConsistencyTest` fails if the schema
+has an SRV no allowlist has), and later its Response reader and the simulator's Response.
 
 The files of the released set are in `samples/rtds_samples/` (not committed: licence to confirm). The tests hold short
 messages written from them, and each says which example it comes from.
@@ -652,7 +665,7 @@ when Temporal is down), then dropped.
 |---|---|
 | `dcc-tools/dsp-simulator/.../DspSimulator.java` | HTTP server: answers at once, schedules the asynchronous messages. |
 | `.../DeviceBehaviour.java` | Behaviour from the device ID. |
-| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the real Response (MMC 5.5: electricity or gas for 4.1.1, device log for 8.9; gas for the devices in `EDT_GAS_DEVICES`) and the PLACEHOLDER sync response and DCC Alert. |
+| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the real Response (MMC 5.5: electricity or gas for 4.1.1, device log for 8.9, payment mode for 6.2.9, Sub GHz configuration for 6.30, firmware version for 11.2; gas for the devices in `EDT_GAS_DEVICES`; 8.9 and 6.30 come through the Access Control Broker with the supplementary fields) and the PLACEHOLDER sync response and DCC Alert. |
 | `orchestrator/.../adapter/DuisSenderActivityImpl.java` | Posts once with the JDK `HttpClient`, reads the sync response. HTTP error -> exception. |
 | `orchestrator/.../infrastructure/TemporalWorker.java` | Two workers: `orchestrator` (workflows, builder) and `duis-send` (sender). |
 
@@ -832,7 +845,7 @@ outcome: {"status":"RESPONDED","facts":{"values":{"ActiveImportRegister":"10","A
 |---|---|
 | `orchestrator/.../entity/Facts.java` | Name -> value, sorted, immutable. |
 | `.../usecase/ResponseDecoder.java` | The port. In the model this is **Parsec** (CSW software, GBCS decoding), which we do not have. |
-| `.../adapter/RealResponseDecoder.java` | Reads the real decoded Response (MMC XML, what Parsec yields) of SRV 4.1.1 and 8.9 into Facts (table below). Written from the released RTDS 4.10.0 examples. |
+| `.../adapter/RealResponseDecoder.java` | Reads the real decoded Response (MMC XML, what Parsec yields) of SRV 4.1.1, 8.9, 6.2.9, 6.30 and 11.2 into Facts (table below). Written from the released RTDS 4.10.0 examples. A failed read of the last three names its result in `DataAccessResult`, which goes into `DebugSummary`. |
 | `.../adapter/ResponseDecoderActivityImpl.java` | Activity `DecodeResponse`; logs `response-decoded` (the model's "each Response decoded"); a payload it cannot decode fails with non-retryable `ResponseNotDecodable`. |
 | `.../adapter/ServiceRequestWorkflowImpl.java` | After the Response: decode, then return `RESPONDED` with the Facts, or `DECODE_FAILED`. |
 
@@ -850,6 +863,9 @@ The Facts (flat `name -> text`):
 | 4.1.1, electricity meter | `ActiveImportRegister`, `ReactiveImportRegister` (and `SecondaryActiveImportRegister` on a twin-element meter), each with `<name>.Unit` |
 | 4.1.1, gas meter | `ConsumptionRegister` and `ConsumptionRegister.Unit` |
 | 8.9, hub | `CHFDeviceLog.<deviceId>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` for each device in the log |
+| 6.2.9, meter | `PaymentMode` |
+| 11.2, any device | `FirmwareVersion` |
+| 6.30, hub | every value that is plain text in the Response, named after its element (`MaximumSubGHzChannelChangesPerWeek`, `GSMECurfew`, the duty cycle and noise thresholds...). The channel lists are not Facts |
 | any | `MessageSuccess`; when it is `false` also `DebugSummary` (the distinct non-success COSEM and ZigBee result strings, comma-separated). A value the Response lacks gives no Fact. |
 
 `MessageSuccess=false` is recorded, not judged: the Service Request stays `RESPONDED` (design D5). The Response is the **decoded MMC XML**, confirmed as what the DSP delivers.

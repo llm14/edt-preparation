@@ -1,7 +1,3 @@
-;;;;
-;;;;
-;;;;
-;;;;
 Service Request Name;SRV;Future Dated;Target Devices;Notes
 Read Event Or Security Log;6.13;No;ESME / GSME / GPF / CHF;Supports triage into non-comm by giving visibility into events (typically failures and errors) that occur .on devices.
 ;;;;

@@ -98,6 +98,74 @@ class ServiceRequestWorkflowTest {
                 "the request names no device type, so the signer is given it next to the request");
     }
 
+    // --- the SRVs of the draft Flows: the builder, the (fake) signer and sender, and the real decoder, with the Response the DSP simulator writes ---
+
+    static final String RA = "http://www.dccinterface.co.uk/ResponseAndAlert";
+
+    /** The Response of the simulator for 6.2.9 (RTDS ECS26j), 11.2 (ECS52) and 6.30 (DBCH03), without the header. */
+    static final String PAYMENT_MODE_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess=\"true\"><ra:PaymentMode>Prepayment</ra:PaymentMode>"
+            + "</ra:ReadDeviceConfigurationPaymentModeRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+    static final String FIRMWARE_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadFirmwareVersionRsp MessageSuccess=\"true\"><ra:FirmwareVersion>0123ABCD</ra:FirmwareVersion>"
+            + "</ra:ReadFirmwareVersionRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+    static final String SUB_GHZ_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadCHFSubGHzConfigurationRsp MessageSuccess=\"true\"><ra:LowerBandSubGHzChannels0To26><ra:Channel0/>"
+            + "</ra:LowerBandSubGHzChannels0To26><ra:MaximumSubGHzChannelChangesPerWeek>4</ra:MaximumSubGHzChannelChangesPerWeek>"
+            + "<ra:GSMECurfew>6</ra:GSMECurfew></ra:ReadCHFSubGHzConfigurationRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+
+    ServiceRequestOutcome runWith(String deviceType, String srv, String responseXml) {
+        ServiceRequestInput input = new ServiceRequestInput(INPUT.requestId(), "batch-1", INPUT.originator(),
+                INPUT.targetDevice(), deviceType, srv);
+        signerSigns();
+        dspAccepts();
+        env.start();
+        ServiceRequestWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ServiceRequestWorkflow.class,
+                WorkflowOptions.newBuilder().setTaskQueue(ORCHESTRATOR_QUEUE)
+                        .setWorkflowId(RequestId.workflowId(input.requestId())).build());
+        WorkflowClient.start(workflow::executeServiceRequest, input);
+        signal(new DspMessage(DspMessage.RESPONSE, null, responseXml));
+        return result(workflow);
+    }
+
+    @Test
+    void srv_6_2_9_is_built_sent_and_decoded_into_the_payment_mode() {
+        ServiceRequestOutcome outcome = runWith("ESME", "6.2.9", PAYMENT_MODE_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "PaymentMode", "Prepayment")), outcome.facts());
+        assertTrue(sent.get(0).contains("<sr:ReadDeviceConfigurationPaymentMode/>"));
+        assertTrue(sent.get(0).contains("<sr:ServiceReference>6.2</sr:ServiceReference>"));
+    }
+
+    @Test
+    void srv_11_2_is_built_sent_and_decoded_into_the_firmware_version() {
+        ServiceRequestOutcome outcome = runWith("ESME", "11.2", FIRMWARE_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "FirmwareVersion", "0123ABCD")), outcome.facts());
+        assertTrue(sent.get(0).contains("<sr:ReadFirmwareVersion/>"));
+    }
+
+    @Test
+    void srv_6_30_is_built_sent_and_decoded_into_scalar_facts() {
+        ServiceRequestOutcome outcome = runWith("CHF", "6.30", SUB_GHZ_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "MaximumSubGHzChannelChangesPerWeek", "4", "GSMECurfew", "6")),
+                outcome.facts(), "the channel list is not a Fact");
+        assertTrue(sent.get(0).contains("<sr:ReadCHFSubGHzConfiguration/>"));
+        assertEquals(List.of("CHF"), signedForDeviceTypes);
+    }
+
+    @Test
+    void a_response_of_another_srv_is_decode_failed() {
+        ServiceRequestOutcome outcome = runWith("ESME", "11.2", PAYMENT_MODE_XML);
+
+        assertEquals(ServiceRequestOutcome.DECODE_FAILED, outcome.status());
+        assertEquals("the Response has no ReadFirmwareVersionRsp", outcome.detail());
+    }
+
     @Test
     void a_response_that_cannot_be_decoded_is_decode_failed_and_not_sent_again() {
         signerSigns();

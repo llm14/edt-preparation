@@ -11,8 +11,8 @@ import java.util.Map;
  * The request names no originator and no device type: both are in the Request ID ("originator:device:counter").
  * The Command Variant is 1, the value of the non-critical read requests of the released data.
  *
- * Only the SRVs of the placeholder Flow are known (table below). The DUIS Signer's partial schema lists the same two.
- * An SRV that is not in the table fails without retry: building it again gives the same result.
+ * Only the SRVs below are known: 4.1.1 and 8.9, and the three of the draft Flows (6.2.9, 6.30, 11.2). The DUIS Signer's
+ * partial schema lists the same five. An SRV that is not in the table fails without retry: building it again gives the same result.
  */
 public final class RequestBuilderActivityImpl implements RequestBuilderActivity {
 
@@ -27,7 +27,10 @@ public final class RequestBuilderActivityImpl implements RequestBuilderActivity 
 
     private static final Map<String, SrvShape> SRVS = Map.of(
             "4.1.1", new SrvShape("4.1", "ReadInstantaneousImportRegisters"),
-            "8.9", new SrvShape("8.9", "ReadDeviceLog"));
+            "8.9", new SrvShape("8.9", "ReadDeviceLog"),
+            "6.2.9", new SrvShape("6.2", "ReadDeviceConfigurationPaymentMode"),
+            "6.30", new SrvShape("6.30", "ReadCHFSubGHzConfiguration"),
+            "11.2", new SrvShape("11.2", "ReadFirmwareVersion"));
 
     @Override
     public String build(ServiceRequestInput input) {

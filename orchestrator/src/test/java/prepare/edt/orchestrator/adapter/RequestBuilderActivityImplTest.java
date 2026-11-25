@@ -14,7 +14,8 @@ import org.xml.sax.InputSource;
 import prepare.edt.orchestrator.entity.RequestId;
 
 /**
- * The expected structure is that of the RTDS examples ECS17b (SRV 4.1.1, device ...90-A0) and CCS06 (SRV 8.9, device ...90-A2).
+ * The expected structure is that of the RTDS examples ECS17b (SRV 4.1.1, device ...90-A0), CCS06 (SRV 8.9, device ...90-A2),
+ * ECS26j (SRV 6.2.9), DBCH03 (SRV 6.30) and ECS52 (SRV 11.2).
  */
 class RequestBuilderActivityImplTest {
 
@@ -47,6 +48,37 @@ class RequestBuilderActivityImplTest {
         assertEquals("8.9", text(request, "ServiceReferenceVariant"));
         assertEquals(1, request.getElementsByTagNameNS(NS, "ReadDeviceLog").getLength());
         assertFalse(request.getElementsByTagNameNS(NS, "ReadDeviceLog").item(0).hasChildNodes());
+    }
+
+    @Test
+    void srv_6_2_9_has_service_reference_6_2_and_an_empty_payment_mode_body() throws Exception {
+        Document request = parse(builder.build(input("00-DB-12-34-56-78-90-A0", "ESME", "6.2.9")));
+
+        assertEquals("1", text(request, "CommandVariant"));
+        assertEquals("6.2", text(request, "ServiceReference"));
+        assertEquals("6.2.9", text(request, "ServiceReferenceVariant"));
+        assertEquals(1, request.getElementsByTagNameNS(NS, "ReadDeviceConfigurationPaymentMode").getLength());
+        assertFalse(request.getElementsByTagNameNS(NS, "ReadDeviceConfigurationPaymentMode").item(0).hasChildNodes());
+    }
+
+    @Test
+    void srv_6_30_has_an_empty_sub_ghz_configuration_body() throws Exception {
+        Document request = parse(builder.build(input("00-DB-12-34-56-78-90-A2", "CHF", "6.30")));
+
+        assertEquals("6.30", text(request, "ServiceReference"));
+        assertEquals("6.30", text(request, "ServiceReferenceVariant"));
+        assertEquals(1, request.getElementsByTagNameNS(NS, "ReadCHFSubGHzConfiguration").getLength());
+        assertFalse(request.getElementsByTagNameNS(NS, "ReadCHFSubGHzConfiguration").item(0).hasChildNodes());
+    }
+
+    @Test
+    void srv_11_2_has_an_empty_firmware_version_body() throws Exception {
+        Document request = parse(builder.build(input("00-DB-12-34-56-78-90-A0", "ESME", "11.2")));
+
+        assertEquals("11.2", text(request, "ServiceReference"));
+        assertEquals("11.2", text(request, "ServiceReferenceVariant"));
+        assertEquals(1, request.getElementsByTagNameNS(NS, "ReadFirmwareVersion").getLength());
+        assertFalse(request.getElementsByTagNameNS(NS, "ReadFirmwareVersion").item(0).hasChildNodes());
     }
 
     @Test
