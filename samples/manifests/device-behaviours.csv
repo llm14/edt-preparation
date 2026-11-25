@@ -1,9 +1,9 @@
 device_id,device_type,flow
-00-DB-12-34-56-78-91-A0,ESME,flow-1
-00-DB-12-34-56-78-91-A1,ESME,flow-1
-00-DB-12-34-56-78-91-A2,ESME,flow-1
-00-DB-12-34-56-78-91-A3,ESME,flow-1
-00-DB-12-34-56-78-91-A4,ESME,flow-1
-00-DB-12-34-56-78-91-A5,ESME,flow-1
-00-DB-12-34-56-78-91-A6,ESME,flow-1
-00-DB-12-34-56-78-91-A7,ESME,flow-1
+00-DB-12-34-56-78-91-A0,ESME,meter-triage
+00-DB-12-34-56-78-91-A1,ESME,meter-triage
+00-DB-12-34-56-78-91-A2,ESME,meter-triage
+00-DB-12-34-56-78-91-A3,ESME,meter-triage
+00-DB-12-34-56-78-91-A4,ESME,meter-triage
+00-DB-12-34-56-78-91-A5,ESME,meter-triage
+00-DB-12-34-56-78-91-A6,ESME,meter-triage
+00-DB-12-34-56-78-91-A7,ESME,meter-triage

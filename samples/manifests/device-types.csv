@@ -1,4 +1,4 @@
 device_id,device_type,flow
-00-DB-12-34-56-78-92-A0,ESME,flow-1
-00-DB-12-34-56-78-93-A0,GSME,flow-1
-00-DB-12-34-56-78-94-A0,CHF,flow-1
+00-DB-12-34-56-78-92-A0,ESME,meter-triage
+00-DB-12-34-56-78-93-A0,GSME,meter-triage
+00-DB-12-34-56-78-94-A0,CHF,hub-triage

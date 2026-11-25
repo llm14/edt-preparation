@@ -1001,15 +1001,15 @@ Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `r
 **[INFERRED]** The model says the Page reads its rows, but the Batch needs the next Page's offset to keep several Pages
 running. So the Page signals it back (`PageRead`) as soon as it has read. The model does not draw this.
 
-Verified with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7). **This run was made with the old single-step Flow** (the Service Request column is the one request it sent). With the draft Flows the same Verdicts follow from the rule in `FlowWorkflowImpl.verdictOf` (checked in `FlowWorkflowTest`), but a responding device now runs two steps; the cluster run with the draft Flows is task 5.2 of `two-draft-flows`:
+Verified on the local cluster (2026-11-25, with the draft Flows) with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7, all on `meter-triage`). Every step of a Flow gets the device's behaviour, and the Flow stops at the first step without a Response:
 
-| Device | Service Request | Verdict |
+| Device | Steps run (`FlowStep`) | Verdict |
 |---|---|---|
-| A0, A5 | RESPONDED | RESPONDS |
-| A1, A2 | FAILED_ALERT (N12, N13) | NO_RESPONSE |
-| A3, A6 | TIMED_OUT (A3 silent; A6's tampered Response was discarded) | NO_RESPONSE |
-| A4 | REJECTED_BY_DSP | NOT_DIAGNOSED |
-| A7 | SEND_FAILED (tampered synchronous response refused) | NOT_DIAGNOSED |
+| A0, A5 | 2: 6.2.9 RESPONDED, 11.2 RESPONDED | RESPONDS |
+| A1, A2 | 1: 6.2.9 FAILED_ALERT (N12, N13) | NO_RESPONSE |
+| A3, A6 | 1: 6.2.9 TIMED_OUT (A3 silent; A6's tampered Response was discarded) | NO_RESPONSE |
+| A4 | 1: 6.2.9 REJECTED_BY_DSP | NOT_DIAGNOSED |
+| A7 | 1: 6.2.9 SEND_FAILED (tampered synchronous response refused) | NOT_DIAGNOSED |
 
 Result: `{"devices":8,"invalidRows":0,"pages":5,"verdicts":{"NOT_DIAGNOSED":2,"NO_RESPONSE":4,"RESPONDS":2}}`.
 The Batch continues as new after enough Pages. `device-types.csv` gives the three Response shapes and their Facts (step 14).
@@ -1064,11 +1064,14 @@ Read a topic (partition, key, headers, value):
 MSYS_NO_PATHCONV=1 docker run --rm --network edt apache/kafka:4.1.0 /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092 --topic edt.device-results --from-beginning --timeout-ms 8000   --property print.partition=true --property print.key=true --property print.headers=true
 ```
 
-Verified with the sample Manifest, **with the old single-step Flow** (with the draft Flows a responding device gives two step events; re-checked in task 5.2 of `two-draft-flows`): 11 messages (5 steps, 5 device results, 1 Batch result). A device result:
+Verified on the local cluster (2026-11-25, draft Flows) with `samples/manifests/device-types.csv`: 10 messages (6 `FlowStep`, 3 `DeviceResult`, 1 `BatchResult`). A device result:
 ```
-Partition:1  event-id:batch-.../row-1,event-type:DeviceResult  00-DB-12-34-56-78-90-A0
-{"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-90-A0","rowNumber":1,"flow":"flow-1","verdict":"RESPONDS"}
+{"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-92-A0","rowNumber":1,"flow":"meter-triage","verdict":"RESPONDS"}
 ```
+
+The step events of the CHF (`hub-triage`) carry the Facts of 8.9 (`CHFDeviceLog.<id>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` for two devices) and then of 6.30 (the 11 thresholds).
+
+The two Kafka runs of the older single-step Flow below (A3's timer) are kept as history.
 
 Seen once in that run: A3's 2-minute timer fired after 5 min 50 s (the history shows `startToFireTimeout: 120s`).
 Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine paused?), not the code. Watch for it.

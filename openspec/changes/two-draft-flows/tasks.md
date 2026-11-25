@@ -35,9 +35,9 @@ On Windows set `JAVA_HOME` to the full JDK (`C:\Program Files\Java\jdk-25.0.5.1`
 
 ## 5. Samples and cluster check
 
-- [ ] 5.1 Rewrite the sample Manifests so each row names its Flow (`meter-triage` for ESME and GSME rows, `hub-triage` for CHF rows) and update `samples/manifests/README.md`; verify `SampleManifestsTest` (each file's purpose, A0 to A7, no device in two files, every `flow` is in the catalogue)
-- [ ] 5.2 Check the draft Flows on the local cluster: `deploy/edt.sh up`, upload `one-device.csv`, `device-types.csv` and `device-behaviours.csv`; verify Temporal shows the workflows `COMPLETED`, Kafka holds two `FlowStep` events for each responding device and one for each silent one, and `device-behaviours.csv` ends with `devices` 8, `pages` 5 and the Verdicts of `samples/manifests/README.md` (`RESPONDS` 2, `NO_RESPONSE` 4, `NOT_DIAGNOSED` 2)
-- [ ] 5.3 Run `deploy/check-interactions.sh` and `deploy/check-log-shape.sh`; verify both pass and the log events `flow-refused` and `flow-ended` carry the Flow name
+- [x] 5.1 Rewrite the sample Manifests so each row names its Flow (`meter-triage` for ESME and GSME rows, `hub-triage` for CHF rows) and update `samples/manifests/README.md`; verify `SampleManifestsTest` (each file's purpose, A0 to A7, no device in two files, every `flow` is in the catalogue)
+- [x] 5.2 Check the draft Flows on the local cluster: `deploy/edt.sh up`, upload `one-device.csv`, `device-types.csv` and `device-behaviours.csv`; verify Temporal shows the workflows `COMPLETED`, Kafka holds two `FlowStep` events for each responding device and one for each silent one, and `device-behaviours.csv` ends with `devices` 8, `pages` 5 and the Verdicts of `samples/manifests/README.md` (`RESPONDS` 2, `NO_RESPONSE` 4, `NOT_DIAGNOSED` 2)
+- [x] 5.3 Run `deploy/check-interactions.sh` and `deploy/check-log-shape.sh`; verify both pass and the log events `flow-refused` and `flow-ended` carry the Flow name
 
 ## Workflow follow-up
 

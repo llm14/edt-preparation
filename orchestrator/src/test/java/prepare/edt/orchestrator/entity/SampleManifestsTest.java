@@ -51,6 +51,25 @@ class SampleManifestsTest {
     }
 
     @Test
+    void every_row_names_a_flow_in_the_catalogue_that_accepts_its_device_type() throws Exception {
+        for (String file : List.of("one-device.csv", "device-types.csv", "device-behaviours.csv")) {
+            for (ManifestRow row : rows(file)) {
+                Flow flow = FlowCatalogue.find(row.flow()).orElse(null);
+                assertTrue(flow != null, file + " row " + row.rowNumber() + ": the catalogue has no Flow " + row.flow());
+                assertTrue(flow.acceptsDeviceType(row.deviceType()),
+                        file + " row " + row.rowNumber() + ": " + row.flow() + " does not take " + row.deviceType());
+            }
+        }
+    }
+
+    @Test
+    void device_types_runs_meter_triage_for_the_meters_and_hub_triage_for_the_hub() throws Exception {
+        var rows = rows("device-types.csv");
+
+        assertEquals(List.of("meter-triage", "meter-triage", "hub-triage"), rows.stream().map(ManifestRow::flow).toList());
+    }
+
+    @Test
     void no_device_is_in_two_files() throws Exception {
         List<String> ids = new ArrayList<>();
         for (String file : List.of("one-device.csv", "device-types.csv", "device-behaviours.csv")) {

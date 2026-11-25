@@ -16,7 +16,7 @@ Everything marked "unverified" was not run, only read.
 
 One-device Manifest (A0: the simulator answers after 5 s):
 ```bash
-printf 'device_id,device_type,flow\n00-DB-12-34-56-78-90-A0,ESME,flow-1\n' > samples/manifests/one-device.csv
+printf 'device_id,device_type,flow\n00-DB-12-34-56-78-90-A0,ESME,meter-triage\n' > samples/manifests/one-device.csv
 ```
 
 Two rules while debugging:
@@ -42,8 +42,8 @@ Compose and IntelliJ. Checked on 2026-11-19 (the OpenSpec change `local-kubernet
 | Service Request history | `TimerStarted` (the 2-minute wait), then `WorkflowExecutionSignaled` 5 s later (the simulator's delay), then `TimerCanceled`: the timeout never fires |
 | Response Listener | "DSP message delivered to its Service Request workflow", about 50 ms before "Service Request ended" (an Orchestrator line with `event.action` `service-request-ended`, `edt.request_id` and `edt.status` `RESPONDED` as top-level fields) |
 | Simulator | `behaviour=RESPOND`, `delivered ... attempt=1` (first try) |
-| Kafka (observed with the old single-step Flow, SRV 4.1.1, before `two-draft-flows`; a device now gets two `FlowStep` events, see step 11) | 1 `FlowStep` (`status` RESPONDED, facts `ActiveImportRegister`, `ReactiveImportRegister` (each with `.Unit`) and `MessageSuccess`), 1 `DeviceResult` (verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
-| Time | Batch started 15:06:22, ended 15:06:29: about 7 s from upload to the last event |
+| Kafka (with `one-device.csv`, draft Flows, 2026-11-25) | 2 `FlowStep` (step 1: SRV 6.2.9, `RESPONDED`, facts `MessageSuccess` and `PaymentMode`; step 2: SRV 11.2, `RESPONDED`, facts `MessageSuccess` and `FirmwareVersion`), 1 `DeviceResult` (flow `meter-triage`, verdict `RESPONDS`), 1 `BatchResult` (`pages` 1, `devices` 1, `invalidRows` 0, `verdicts` `{RESPONDS: 1}`) |
+| Time | Upload 11:06:51, `Flow ended` logged 11:07:05: about 14 s, two steps with the simulator's 5 s delay each |
 
 **What is different from this manual**
 
