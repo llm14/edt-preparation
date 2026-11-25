@@ -29,6 +29,8 @@ spec:
               value: {{ .Values.dspSimulator.responseListenerUrl | quote }}
             - name: EDT_RESPONSE_DELAY_SECONDS
               value: {{ .Values.dspSimulator.responseDelaySeconds | quote }}
+            - name: EDT_GAS_DEVICES
+              value: {{ .Values.dspSimulator.gasDevices | quote }}
             - name: EDT_DSP_KEYSTORE
               value: /dsp-keys/dsp-signing.p12
             - name: EDT_DSP_KEYSTORE_PASSWORD

@@ -57,13 +57,13 @@ class ResultPublisherActivityImplTest {
     void a_step_carries_the_facts_and_a_batch_result_is_keyed_by_batch() {
         publisher.publishFlowStep(new ResultPublisherActivity.FlowStep("batch-1/row-1/step-1", "t", "batch-1",
                 "00-DB-12-34-56-78-90-A0", 1, 1, "4.1.1", "R", "RESPONDED", null,
-                Map.of("InstantaneousImportRegister", "12345.6")));
+                Map.of("ActiveImportRegister", "12345.6")));
         publisher.publishBatchResult(new ResultPublisherActivity.BatchResult("batch-1", "t", "batch-1", 3, 5, 0,
                 Map.of("RESPONDS", 2)));
 
         assertEquals("edt.flow-steps", producer.history().get(0).topic());
         assertEquals("00-DB-12-34-56-78-90-A0", producer.history().get(0).key());
-        assertEquals(true, producer.history().get(0).value().contains("\"facts\":{\"InstantaneousImportRegister\":\"12345.6\"}"));
+        assertEquals(true, producer.history().get(0).value().contains("\"facts\":{\"ActiveImportRegister\":\"12345.6\"}"));
         assertEquals("edt.batch-results", producer.history().get(1).topic());
         assertEquals("batch-1", producer.history().get(1).key());
     }

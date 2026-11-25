@@ -85,7 +85,8 @@ public class ServiceRequestWorkflowImpl implements ServiceRequestWorkflow {
 
         String unsigned = builder.build(input);
 
-        SignOutcome signed = signer.sign(unsigned);
+        // The DUIS request names no device type, so the signer is told it next to the request.
+        SignOutcome signed = signer.sign(unsigned, input.deviceType());
         if (!SignOutcome.SIGNED.equals(signed.status())) {
             return outcome(ServiceRequestOutcome.REFUSED_BY_SIGNER, requestId, null, null, signed.refusalReason());
         }

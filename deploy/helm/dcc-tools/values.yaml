@@ -22,6 +22,10 @@ floci:
   # Open source (MIT), no account. In memory only.
   image: floci/floci:2.4.0
 
+kafkaUi:
+  # A developer tool to browse the topics, not part of the model. Open source (Apache-2.0), no account.
+  image: ghcr.io/kafbat/kafka-ui:v1.4.2
+
 kafka:
   image: apache/kafka:4.1.0
   # [CONFIRM] Plain text and placeholder topics: DCC owns the real cluster, its authentication and its topics.
@@ -33,6 +37,8 @@ dspSimulator:
   # Where the delayed Responses go: the Response Listener's full service name (it is in another namespace).
   responseListenerUrl: http://response-listener.edt.svc.cluster.local:8084/duis/responses
   responseDelaySeconds: 5
+  # Comma-separated device IDs that are gas meters: a 4.1.1 Response for them is a gas reading (the default is electricity).
+  gasDevices: "00-DB-12-34-56-78-93-A0"   # the GSME of samples/manifests/device-types.csv
   # The DSP's private signing key lives in this Secret (key "dsp-signing.p12"), created by the install script.
   keySecret: dsp-signing-key
   keystorePassword: edt-test-only   # test only, as in Compose

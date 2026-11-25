@@ -34,11 +34,15 @@ public final class SignServiceRequest {
         this.auditLog = auditLog;
     }
 
-    public SignResult sign(String unsignedXml) {
+    /**
+     * @param unsignedXml the Service Request, unsigned
+     * @param deviceType  the type of the target device: the request does not carry it
+     */
+    public SignResult sign(String unsignedXml, String deviceType) {
         long startedAt = System.nanoTime();
         ServiceRequest request;
         try {
-            request = reader.read(unsignedXml);
+            request = reader.read(unsignedXml, deviceType);
         } catch (InvalidServiceRequestException e) {
             return refuse(null, null, "invalid Service Request: " + e.getMessage(), startedAt);
         }

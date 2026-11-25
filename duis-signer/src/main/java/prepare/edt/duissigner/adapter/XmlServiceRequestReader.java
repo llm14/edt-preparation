@@ -13,12 +13,15 @@ import prepare.edt.duissigner.usecase.ServiceRequestReader;
  * Reads an unsigned Service Request: parses it safely, validates it against the schema,
  * and takes the values the signing policy needs.
  *
- * Uses the PLACEHOLDER schema (schema/service-request-placeholder.xsd) until DCC provides the DUIS schema.
+ * The request is a DUIS 5.5 request. It names no originator and no device type: the originator is the first part of its
+ * RequestID ("originator:device:counter"), and the device type is given by the caller (the Orchestrator knows it from the Manifest).
+ *
+ * Uses a PARTIAL schema (schema/service-request.xsd), written from the released examples, until DCC provides the DUIS schema.
  */
 public final class XmlServiceRequestReader implements ServiceRequestReader {
 
-    static final String NAMESPACE = "urn:edt:placeholder:duis";
-    private static final String SCHEMA = "/schema/service-request-placeholder.xsd";
+    static final String NAMESPACE = "http://www.dccinterface.co.uk/ServiceUserGateway";
+    private static final String SCHEMA = "/schema/service-request.xsd";
 
     private final Schema schema;
 
@@ -35,7 +38,7 @@ public final class XmlServiceRequestReader implements ServiceRequestReader {
     }
 
     @Override
-    public ServiceRequest read(String xml) {
+    public ServiceRequest read(String xml, String deviceType) {
         Document document;
         try {
             document = SecureXml.parse(xml);
@@ -46,12 +49,10 @@ public final class XmlServiceRequestReader implements ServiceRequestReader {
         } catch (Exception e) {
             throw new InvalidServiceRequestException(e.getMessage());
         }
-        return new ServiceRequest(
-                text(document, "RequestId"),
-                text(document, "SRV"),
-                text(document, "Originator"),
-                text(document, "DeviceType"),
-                xml);
+        String requestId = text(document, "RequestID");
+        // The schema guarantees "originator:device:counter", so there is a colon.
+        String originator = requestId.substring(0, requestId.indexOf(':'));
+        return new ServiceRequest(requestId, text(document, "ServiceReferenceVariant"), originator, deviceType, xml);
     }
 
     private static String text(Document document, String element) {

@@ -24,12 +24,14 @@ import prepare.edt.duissigner.entity.UserRole;
 /** Signs with real (test) keys through JCA, then verifies the XML signature. */
 class JcaXmlSignerTest {
 
+    /** The request of the RTDS example ECS17b (SRV 4.1.1), unsigned, with the originator of the placeholder Other User role. */
     static final String UNSIGNED = """
-            <ServiceRequest xmlns="urn:edt:placeholder:duis">\
-            <Header><RequestId>REQ-1</RequestId><Originator>90-B3-D5-1F-30-01-00-01</Originator>\
-            <SRV>4.1.1</SRV><DeviceType>ESME</DeviceType></Header>\
-            <Body><ReadInstantaneousImportRegisters/></Body>\
-            </ServiceRequest>""";
+            <sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">\
+            <sr:Header><sr:RequestID>90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000</sr:RequestID>\
+            <sr:CommandVariant>1</sr:CommandVariant><sr:ServiceReference>4.1</sr:ServiceReference>\
+            <sr:ServiceReferenceVariant>4.1.1</sr:ServiceReferenceVariant></sr:Header>\
+            <sr:Body><sr:ReadInstantaneousImportRegisters/></sr:Body>\
+            </sr:Request>""";
 
     static final Map<UserRole, String> ALIASES = Map.of(
             UserRole.OTHER_USER, TestKeys.OTHER_USER,
@@ -68,7 +70,7 @@ class JcaXmlSignerTest {
     @Test
     void a_changed_request_no_longer_verifies() throws Exception {
         String signed = signer.sign(UNSIGNED, UserRole.OTHER_USER);
-        String tampered = signed.replace("<SRV>4.1.1</SRV>", "<SRV>4.1.2</SRV>");
+        String tampered = signed.replace("<sr:ServiceReferenceVariant>4.1.1<", "<sr:ServiceReferenceVariant>4.1.2<");
 
         assertFalse(verify(tampered, publicKeyOf(TestKeys.OTHER_USER)));
     }

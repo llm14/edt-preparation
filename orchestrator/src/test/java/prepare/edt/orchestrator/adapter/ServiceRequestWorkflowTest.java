@@ -40,13 +40,15 @@ class ServiceRequestWorkflowTest {
             RequestId.placeholder("90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", 1_000L).value(), "batch-1",
             "90-B3-D5-1F-30-01-00-01", "00-DB-12-34-56-78-90-A0", "ESME", "4.1.1");
 
-    /** Responses in the simulator's placeholder format, which the PlaceholderResponseDecoder reads. */
+    /** Responses in the real MMC format (written from RTDS ECS17b), which the RealResponseDecoder reads. */
     static final String RESPONSE_XML = response("12345.6");
     static final String EARLY_RESPONSE_XML = response("7.0");
 
     static String response(String reading) {
-        return "<Response xmlns=\"urn:edt:placeholder:duis\"><RequestId>R</RequestId><ResponseCode>I0</ResponseCode>"
-                + "<Body><InstantaneousImportRegister>" + reading + "</InstantaneousImportRegister></Body></Response>";
+        return "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+                + "<ra:ReadInstantaneousImportRegistersRsp MessageSuccess=\"true\"><ra:Electricity><ra:ActiveImportRegister>"
+                + "<ra:Value>" + reading + "</ra:Value><ra:ActiveEnergyUnit>Wh</ra:ActiveEnergyUnit></ra:ActiveImportRegister>"
+                + "</ra:Electricity></ra:ReadInstantaneousImportRegistersRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
     }
 
     TestWorkflowEnvironment env;
@@ -54,6 +56,7 @@ class ServiceRequestWorkflowTest {
     Worker signerWorker;
     Worker senderWorker;
     final List<String> sent = new ArrayList<>();
+    final List<String> signedForDeviceTypes = new ArrayList<>();
     final AtomicInteger sends = new AtomicInteger();
     final List<String> fairnessKeys = new ArrayList<>();
 
@@ -64,7 +67,7 @@ class ServiceRequestWorkflowTest {
         orchestrator.registerWorkflowImplementationFactory(ServiceRequestWorkflow.class,
                 () -> new ServiceRequestWorkflowImpl(SIGNING_QUEUE, SEND_QUEUE, RESPONSE_TIMEOUT));
         orchestrator.registerActivitiesImplementations(new RequestBuilderActivityImpl(),
-                new ResponseDecoderActivityImpl(new PlaceholderResponseDecoder()));
+                new ResponseDecoderActivityImpl(new RealResponseDecoder()));
         signerWorker = env.newWorker(SIGNING_QUEUE);
         senderWorker = env.newWorker(SEND_QUEUE);
     }
@@ -85,12 +88,82 @@ class ServiceRequestWorkflowTest {
 
         ServiceRequestOutcome outcome = result(workflow);
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals(Facts.of(Map.of("InstantaneousImportRegister", "12345.6")), outcome.facts(),
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "ActiveImportRegister", "12345.6", "ActiveImportRegister.Unit", "Wh")), outcome.facts(),
                 "the Response is decoded into Facts");
         assertEquals(1, sends.get());
-        assertTrue(sent.get(0).contains("<RequestId>" + INPUT.requestId() + "</RequestId>"),
+        assertTrue(sent.get(0).contains("<sr:RequestID>" + INPUT.requestId() + "</sr:RequestID>"),
                 "the Request Builder writes the Request ID into the request");
         assertTrue(sent.get(0).contains("<Signature/>"), "what is sent is the signed request");
+        assertEquals(List.of("ESME"), signedForDeviceTypes,
+                "the request names no device type, so the signer is given it next to the request");
+    }
+
+    // --- the SRVs of the draft Flows: the builder, the (fake) signer and sender, and the real decoder, with the Response the DSP simulator writes ---
+
+    static final String RA = "http://www.dccinterface.co.uk/ResponseAndAlert";
+
+    /** The Response of the simulator for 6.2.9 (RTDS ECS26j), 11.2 (ECS52) and 6.30 (DBCH03), without the header. */
+    static final String PAYMENT_MODE_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadDeviceConfigurationPaymentModeRsp MessageSuccess=\"true\"><ra:PaymentMode>Prepayment</ra:PaymentMode>"
+            + "</ra:ReadDeviceConfigurationPaymentModeRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+    static final String FIRMWARE_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadFirmwareVersionRsp MessageSuccess=\"true\"><ra:FirmwareVersion>0123ABCD</ra:FirmwareVersion>"
+            + "</ra:ReadFirmwareVersionRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+    static final String SUB_GHZ_XML = "<ra:GBCSResponse xmlns:ra=\"" + RA + "\"><ra:Body><ra:ResponseMessage><ra:SMETSData>"
+            + "<ra:ReadCHFSubGHzConfigurationRsp MessageSuccess=\"true\"><ra:LowerBandSubGHzChannels0To26><ra:Channel0/>"
+            + "</ra:LowerBandSubGHzChannels0To26><ra:MaximumSubGHzChannelChangesPerWeek>4</ra:MaximumSubGHzChannelChangesPerWeek>"
+            + "<ra:GSMECurfew>6</ra:GSMECurfew></ra:ReadCHFSubGHzConfigurationRsp></ra:SMETSData></ra:ResponseMessage></ra:Body></ra:GBCSResponse>";
+
+    ServiceRequestOutcome runWith(String deviceType, String srv, String responseXml) {
+        ServiceRequestInput input = new ServiceRequestInput(INPUT.requestId(), "batch-1", INPUT.originator(),
+                INPUT.targetDevice(), deviceType, srv);
+        signerSigns();
+        dspAccepts();
+        env.start();
+        ServiceRequestWorkflow workflow = env.getWorkflowClient().newWorkflowStub(ServiceRequestWorkflow.class,
+                WorkflowOptions.newBuilder().setTaskQueue(ORCHESTRATOR_QUEUE)
+                        .setWorkflowId(RequestId.workflowId(input.requestId())).build());
+        WorkflowClient.start(workflow::executeServiceRequest, input);
+        signal(new DspMessage(DspMessage.RESPONSE, null, responseXml));
+        return result(workflow);
+    }
+
+    @Test
+    void srv_6_2_9_is_built_sent_and_decoded_into_the_payment_mode() {
+        ServiceRequestOutcome outcome = runWith("ESME", "6.2.9", PAYMENT_MODE_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "PaymentMode", "Prepayment")), outcome.facts());
+        assertTrue(sent.get(0).contains("<sr:ReadDeviceConfigurationPaymentMode/>"));
+        assertTrue(sent.get(0).contains("<sr:ServiceReference>6.2</sr:ServiceReference>"));
+    }
+
+    @Test
+    void srv_11_2_is_built_sent_and_decoded_into_the_firmware_version() {
+        ServiceRequestOutcome outcome = runWith("ESME", "11.2", FIRMWARE_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "FirmwareVersion", "0123ABCD")), outcome.facts());
+        assertTrue(sent.get(0).contains("<sr:ReadFirmwareVersion/>"));
+    }
+
+    @Test
+    void srv_6_30_is_built_sent_and_decoded_into_scalar_facts() {
+        ServiceRequestOutcome outcome = runWith("CHF", "6.30", SUB_GHZ_XML);
+
+        assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
+        assertEquals(Facts.of(Map.of("MessageSuccess", "true", "MaximumSubGHzChannelChangesPerWeek", "4", "GSMECurfew", "6")),
+                outcome.facts(), "the channel list is not a Fact");
+        assertTrue(sent.get(0).contains("<sr:ReadCHFSubGHzConfiguration/>"));
+        assertEquals(List.of("CHF"), signedForDeviceTypes);
+    }
+
+    @Test
+    void a_response_of_another_srv_is_decode_failed() {
+        ServiceRequestOutcome outcome = runWith("ESME", "11.2", PAYMENT_MODE_XML);
+
+        assertEquals(ServiceRequestOutcome.DECODE_FAILED, outcome.status());
+        assertEquals("the Response has no ReadFirmwareVersionRsp", outcome.detail());
     }
 
     @Test
@@ -100,11 +173,11 @@ class ServiceRequestWorkflowTest {
         env.start();
 
         ServiceRequestWorkflow workflow = start();
-        signal(new DspMessage(DspMessage.RESPONSE, null, "<Response xmlns=\"urn:edt:placeholder:duis\"/>"));
+        signal(new DspMessage(DspMessage.RESPONSE, null, "<ra:GBCSResponse xmlns:ra=\"http://www.dccinterface.co.uk/ResponseAndAlert\"/>"));
 
         ServiceRequestOutcome outcome = result(workflow);
         assertEquals(ServiceRequestOutcome.DECODE_FAILED, outcome.status());
-        assertEquals("the Response has no Body", outcome.detail());
+        assertEquals("the Response has no ReadInstantaneousImportRegistersRsp", outcome.detail());
         assertEquals(1, sends.get());
     }
 
@@ -135,7 +208,7 @@ class ServiceRequestWorkflowTest {
         ServiceRequestOutcome outcome = result(start());
 
         assertEquals(ServiceRequestOutcome.RESPONDED, outcome.status());
-        assertEquals("7.0", outcome.facts().values().get("InstantaneousImportRegister"));
+        assertEquals("7.0", outcome.facts().values().get("ActiveImportRegister"));
     }
 
     @Test
@@ -180,7 +253,7 @@ class ServiceRequestWorkflowTest {
 
     @Test
     void a_refused_signature_stops_it_before_sending() {
-        signerWorker.registerActivitiesImplementations((SignActivity) xml ->
+        signerWorker.registerActivitiesImplementations((SignActivity) (xml, deviceType) ->
                 new SignOutcome(SignOutcome.REFUSED, INPUT.requestId(), null, null, "SRV not allowed"));
         dspAccepts();
         env.start();
@@ -312,9 +385,11 @@ class ServiceRequestWorkflowTest {
     // --- helpers ---
 
     void signerSigns() {
-        signerWorker.registerActivitiesImplementations((SignActivity) xml ->
-                new SignOutcome(SignOutcome.SIGNED, INPUT.requestId(), "OTHER_USER",
-                        xml.replace("</ServiceRequest>", "<Signature/></ServiceRequest>"), null));
+        signerWorker.registerActivitiesImplementations((SignActivity) (xml, deviceType) -> {
+            signedForDeviceTypes.add(deviceType);
+            return new SignOutcome(SignOutcome.SIGNED, INPUT.requestId(), "OTHER_USER",
+                    xml.replace("</sr:Request>", "<Signature/></sr:Request>"), null);
+        });
     }
 
     void dspAccepts() {

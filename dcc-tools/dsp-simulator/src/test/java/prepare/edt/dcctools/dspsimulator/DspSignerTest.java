@@ -45,16 +45,19 @@ class DspSignerTest {
         certificate = (X509Certificate) keystore.getCertificate("dsp");
     }
 
+    static final DspMessages.ServiceRequest REQUEST = new DspMessages.ServiceRequest(
+            "90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000", "00-DB-12-34-56-78-90-A0", "4.1.1", true);
+
     @Test
     void a_signed_response_verifies_with_the_dsp_certificate() throws Exception {
-        assertTrue(verifies(signer.sign(DspMessages.response("R-1"))));
+        assertTrue(verifies(signer.sign(DspMessages.response(REQUEST, java.util.Set.of()))));
         assertTrue(verifies(signer.sign(DspMessages.dccAlert("R-1", "N12"))));
         assertTrue(verifies(signer.sign(DspMessages.syncResponse("R-1", true, "accepted"))));
     }
 
     @Test
     void a_tampered_response_does_not() throws Exception {
-        assertFalse(verifies(DspMessages.tamper(signer.sign(DspMessages.response("R-1")))));
+        assertFalse(verifies(DspMessages.tamper(signer.sign(DspMessages.response(REQUEST, java.util.Set.of())))));
         assertFalse(verifies(DspMessages.tamper(signer.sign(DspMessages.syncResponse("R-1", true, "accepted")))));
     }
 

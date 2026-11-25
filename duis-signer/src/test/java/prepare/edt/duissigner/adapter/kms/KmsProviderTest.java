@@ -69,12 +69,14 @@ class KmsProviderTest {
     static final String ROLE_ALIAS = "other-user";
     static final char[] STORE_PASSWORD = "test-only".toCharArray();
 
+    /** The request of the RTDS example ECS17b (SRV 4.1.1), unsigned. */
     static final String UNSIGNED = """
-            <ServiceRequest xmlns="urn:edt:placeholder:duis">\
-            <Header><RequestId>REQ-1</RequestId><Originator>90-B3-D5-1F-30-01-00-01</Originator>\
-            <SRV>4.1.1</SRV><DeviceType>ESME</DeviceType></Header>\
-            <Body><ReadInstantaneousImportRegisters/></Body>\
-            </ServiceRequest>""";
+            <sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">\
+            <sr:Header><sr:RequestID>90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000</sr:RequestID>\
+            <sr:CommandVariant>1</sr:CommandVariant><sr:ServiceReference>4.1</sr:ServiceReference>\
+            <sr:ServiceReferenceVariant>4.1.1</sr:ServiceReferenceVariant></sr:Header>\
+            <sr:Body><sr:ReadInstantaneousImportRegisters/></sr:Body>\
+            </sr:Request>""";
 
     @Container
     static final GenericContainer<?> FLOCI = new GenericContainer<>("floci/floci:2.4.0")

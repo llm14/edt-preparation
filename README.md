@@ -322,8 +322,9 @@ Try it (with `dcc-tools` running):
 docker compose up --build -d orchestrator duis-signer
 docker run --rm --network edt temporalio/admin-tools:1.32.2 \
   temporal --address temporal:7233 --namespace edt \
-  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input '"<request/>"'
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input '"<request/>"' --input '"ESME"'
 ```
+(`SignProbe` takes two inputs since the requests became real DUIS: the request and the device type, which a DUIS request does not carry.)
 It fails on purpose: the signer answers `Signing is not implemented yet` (type `NotImplemented`, non-retryable).
 Open it in the Temporal UI (http://localhost:8088) to see the history:
 
@@ -382,14 +383,14 @@ Two adapters for the ports of step 11a, in `duis-signer/.../adapter`:
 
 | File | What it does |
 |---|---|
-| `XmlServiceRequestReader` | Parses safely (no DTD, so no XXE), validates against `schema/service-request-placeholder.xsd` (**PLACEHOLDER**, not DUIS), reads RequestId, SRV, Originator, DeviceType. |
+| `XmlServiceRequestReader` | Parses safely (no DTD, so no XXE), validates against `schema/service-request.xsd` (a **partial** schema written from the released DUIS 5.5 examples, **not** the DUIS XSD), reads the Request ID, the SRV and the originator (the first part of the Request ID). The device type is not in a DUIS request: the caller gives it (see "Real DUIS Service Request" below). |
 | `JcaXmlSigner` | Adds an enveloped XML signature: ECDSA P-256 + SHA-256, with the role's certificate in `KeyInfo`. Keys from a JCA `KeyStore`, signature from a JCA provider chosen by name. |
 | `SecureXml` | Safe parse and exact write of XML (shared by both). |
 
 Signed result (shortened):
 ```xml
-<ServiceRequest xmlns="urn:edt:placeholder:duis">
-  <Header>...</Header><Body>...</Body>
+<sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">
+  <sr:Header>...</sr:Header><sr:Body>...</sr:Body>
   <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
     <SignedInfo>
       <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
@@ -401,7 +402,7 @@ Signed result (shortened):
     <SignatureValue>...</SignatureValue>  <!-- 64 bytes: r||s -->
     <KeyInfo><X509Data><X509Certificate>...</X509Certificate></X509Data></KeyInfo>
   </Signature>
-</ServiceRequest>
+</sr:Request>
 ```
 
 Tests (no Docker): keys made with `keytool` (EC `secp256r1`) into a PKCS#12 file; sign, then verify with the
@@ -525,13 +526,15 @@ edt.policy.roles.other-user.srvs."4.1.1"=ESME,GSME    # PLACEHOLDER allowlist
 Try it (with `dcc-tools` running, from the repository root, Git Bash):
 ```
 docker compose up --build -d orchestrator duis-signer
-# input: a JSON string with an unsigned placeholder Service Request (samples/sign-probe/)
+# inputs: a JSON string with an unsigned DUIS Service Request (samples/sign-probe/), then the device type
 MSYS_NO_PATHCONV=1 docker run --rm --network edt -v "$(pwd -W)/samples/sign-probe:/in:ro" temporalio/admin-tools:1.32.2 \
   temporal --address temporal:7233 --namespace edt \
-  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 --input-file /in/signed.json
+  workflow execute --type SignProbe --task-queue orchestrator --workflow-id sign-probe-1 \
+  --input-file /in/signed.json --input '"ESME"'
 ```
-Result: `{"status":"SIGNED","userRole":"OTHER_USER","signedServiceRequest":"<ServiceRequest ...><Signature ...>"}`.
-With `refused.json` (SRV `9.9.9`): `{"status":"REFUSED","refusalReason":"SRV 9.9.9 is not on the allowlist of any User Role"}`.
+Result: `{"status":"SIGNED","userRole":"OTHER_USER","signedServiceRequest":"<sr:Request ...><Signature ...>"}`.
+With `refused.json` and `--input '"CHF"'` (SRV 4.1.1 for a hub; it passes the schema, the policy refuses it):
+`{"status":"REFUSED","refusalReason":"device type CHF is not allowed for SRV 4.1.1"}`.
 
 Audit event (ECS JSON, shortened):
 ```
@@ -571,7 +574,7 @@ ServiceRequestWorkflow (workflow ID = "service-request-" + Request ID)
 | `entity/RequestId` | Request ID = originator : target : counter, and the workflow ID rule. **PLACEHOLDER counter.** |
 | `entity/DccAlerts` | Which alerts fail a Service Request (N12, N13). |
 | `adapter/ServiceRequestWorkflow(Impl)` | The workflow and its signal `DspMessage`. |
-| `adapter/RequestBuilderActivity(Impl)` | Builds the PLACEHOLDER XML the signer validates. |
+| `adapter/RequestBuilderActivity(Impl)` | Builds the real DUIS 5.5 Service Request (see "Real DUIS Service Request" below). |
 | `adapter/DuisSenderActivity`, `SyncResponse` | The sender's contract (implementation in 12b). |
 | `adapter/ServiceRequestOutcome`, `DspMessage`, `ServiceRequestInput` | Data passed through Temporal as JSON. |
 
@@ -590,9 +593,49 @@ Key ideas:
 - **Time skipping**: the test server jumps over timers, so a 2-minute timeout takes milliseconds.
 
 To confirm with DCC / the lead:
-- How the Request ID counter is generated (placeholder for now) and its exact format.
+- How the Request ID counter is generated (placeholder for now). Its text format, `originator:device:counter`, matches the released examples.
 - Open point 2 (retries): built as the model says (send once, never resent). The call described resending.
 - What DCC Alerts other than N12/N13 should do (for now: keep waiting).
+
+#### Real DUIS Service Request
+
+Since the change `real-duis-messages` (group 1) the Service Request is a real DUIS 5.5 request, in the shape of the
+released Reference Test Data Set (RTDS 4.10.0, folder `4.1.1_ECS17b` and `8.9_CCS06`):
+
+```xml
+<sr:Request xmlns:sr="http://www.dccinterface.co.uk/ServiceUserGateway" schemaVersion="5.5">
+  <sr:Header>
+    <sr:RequestID>90-B3-D5-1F-30-01-00-01:00-DB-12-34-56-78-90-A0:1000</sr:RequestID>   <!-- originator:device:counter -->
+    <sr:CommandVariant>1</sr:CommandVariant>                                            <!-- 1: a non-critical read -->
+    <sr:ServiceReference>4.1</sr:ServiceReference>
+    <sr:ServiceReferenceVariant>4.1.1</sr:ServiceReferenceVariant>                       <!-- the SRV -->
+  </sr:Header>
+  <sr:Body><sr:ReadInstantaneousImportRegisters/></sr:Body>
+</sr:Request>
+```
+
+| Point | What it means |
+|---|---|
+| Five SRVs | The builder and the signer know five SRVs (table below). The draft Flows send 8.9 then 6.30 (hub) and 6.2.9 then 11.2 (meter); no Flow sends 4.1.1 any more, but it stays buildable, signable and decodable. 8.9 replaced the placeholder 8.2, for which no Response is released. |
+| No device type in the request | The signer's policy checks "device type allowed for the SRV" (model 100.010), so the Orchestrator gives the device type to the `Sign` activity as a second argument. The originator is the first part of the Request ID. |
+| Partial schema | `duis-signer/src/main/resources/schema/service-request.xsd` is written from the examples and says so: it is **not** the DUIS XSD, which DCC has not provided. It accepts only the five request elements below, command variant 1, and an unsigned request. |
+| Still placeholder | The synchronous response, the Response and the DCC Alerts the simulator writes (groups 3 to 5 replace the Response). The request Request ID and the counter (workflow time) are unchanged. |
+
+The five SRVs (request element, signer allowlist of the Other User role; **PLACEHOLDER** allowlist until DCC provides the real one):
+
+| SRV | Request | Service Reference | Body element | Allowed device types |
+|---|---|---|---|---|
+| 4.1.1 | Read Instantaneous Import Registers | 4.1 | `ReadInstantaneousImportRegisters` | ESME, GSME |
+| 8.9 | Read Device Log | 8.9 | `ReadDeviceLog` | CHF |
+| 6.2.9 | Read Device Configuration (Payment Mode) | 6.2 | `ReadDeviceConfigurationPaymentMode` | ESME, GSME |
+| 6.30 | Read CHF Sub GHz Configuration | 6.30 | `ReadCHFSubGHzConfiguration` | CHF |
+| 11.2 | Read Firmware Version | 11.2 | `ReadFirmwareVersion` | ESME, GSME, CHF |
+
+Adding an SRV means a row in `RequestBuilderActivityImpl`, the schema, the allowlist (`SchemaAllowlistConsistencyTest` fails if the schema
+has an SRV no allowlist has), and later its Response reader and the simulator's Response.
+
+The files of the released set are in `samples/rtds_samples/` (not committed: licence to confirm). The tests hold short
+messages written from them, and each says which example it comes from.
 
 ### Step 12b: the DSP simulator, and the real DUIS Sender
 
@@ -622,7 +665,7 @@ when Temporal is down), then dropped.
 |---|---|
 | `dcc-tools/dsp-simulator/.../DspSimulator.java` | HTTP server: answers at once, schedules the asynchronous messages. |
 | `.../DeviceBehaviour.java` | Behaviour from the device ID. |
-| `.../DspMessages.java` | Reads Service Requests, writes the PLACEHOLDER sync response, Response and DCC Alert. |
+| `.../DspMessages.java` | Reads real DUIS 5.5 Service Requests (the device is the middle part of the Request ID); writes the real Response (MMC 5.5: electricity or gas for 4.1.1, device log for 8.9, payment mode for 6.2.9, Sub GHz configuration for 6.30, firmware version for 11.2; gas for the devices in `EDT_GAS_DEVICES`; 8.9 and 6.30 come through the Access Control Broker with the supplementary fields) and the PLACEHOLDER sync response and DCC Alert. |
 | `orchestrator/.../adapter/DuisSenderActivityImpl.java` | Posts once with the JDK `HttpClient`, reads the sync response. HTTP error -> exception. |
 | `orchestrator/.../infrastructure/TemporalWorker.java` | Two workers: `orchestrator` (workflows, builder) and `duis-send` (sender). |
 
@@ -672,7 +715,7 @@ The HTTP status tells the gateway whether to retry:
 |---|---|
 | `response-listener/.../entity/ServiceRequestWorkflowId.java` | The rule Request ID -> workflow ID. |
 | `.../usecase/RouteDspMessage.java` | read -> (DSP signature check, later) -> workflow ID -> signal. |
-| `.../adapter/XmlDspMessageReader.java` | Reads `Response` / `DCCAlert` (PLACEHOLDER XML), refuses DTDs. |
+| `.../adapter/XmlDspMessageReader.java` | Reads the real `GBCSResponse` (rebuilds the Request ID from its header; through the hub from the supplementary fields) and the `DCCAlert` (PLACEHOLDER XML); refuses a device alert, a placeholder `Response` and DTDs. |
 | `.../adapter/TemporalWorkflowSignaller.java` | `client.newUntypedWorkflowStub(id).signal("DspMessage", payload)`. `WorkflowNotFoundException` = orphan. |
 | `.../adapter/DspMessageResource.java` | `POST /duis/responses`; maps the result to the HTTP status; logs. |
 
@@ -794,15 +837,15 @@ to its caller (the Flow, later). Facts are the values from the Response that the
 
 ```
 Service Request workflow --DecodeResponse(srv, Response)--> ResponseDecoderActivity --> ResponseDecoder port
-                         <--Facts {InstantaneousImportRegister=12345.6}--
-outcome: {"status":"RESPONDED","facts":{"values":{"InstantaneousImportRegister":"12345.6"}}, ...}
+                         <--Facts {MessageSuccess=true, ActiveImportRegister=10, ...}--
+outcome: {"status":"RESPONDED","facts":{"values":{"ActiveImportRegister":"10","ActiveImportRegister.Unit":"Wh",...,"MessageSuccess":"true"}}, ...}
 ```
 
 | File | What it does |
 |---|---|
 | `orchestrator/.../entity/Facts.java` | Name -> value, sorted, immutable. |
 | `.../usecase/ResponseDecoder.java` | The port. In the model this is **Parsec** (CSW software, GBCS decoding), which we do not have. |
-| `.../adapter/PlaceholderResponseDecoder.java` | PLACEHOLDER: each simple element of the placeholder Response `Body` becomes a Fact. |
+| `.../adapter/RealResponseDecoder.java` | Reads the real decoded Response (MMC XML, what Parsec yields) of SRV 4.1.1, 8.9, 6.2.9, 6.30 and 11.2 into Facts (table below). Written from the released RTDS 4.10.0 examples. A failed read of the last three names its result in `DataAccessResult`, which goes into `DebugSummary`. |
 | `.../adapter/ResponseDecoderActivityImpl.java` | Activity `DecodeResponse`; logs `response-decoded` (the model's "each Response decoded"); a payload it cannot decode fails with non-retryable `ResponseNotDecodable`. |
 | `.../adapter/ServiceRequestWorkflowImpl.java` | After the Response: decode, then return `RESPONDED` with the Facts, or `DECODE_FAILED`. |
 
@@ -813,6 +856,21 @@ Changes:
 - Failure details now show the original message (for example A7: "DSP signature on the synchronous response is not
   valid: signature does not match"), without Temporal's `message='...', type='...'` wrapper.
 
+The Facts (flat `name -> text`):
+
+| SRV, content | Facts |
+|---|---|
+| 4.1.1, electricity meter | `ActiveImportRegister`, `ReactiveImportRegister` (and `SecondaryActiveImportRegister` on a twin-element meter), each with `<name>.Unit` |
+| 4.1.1, gas meter | `ConsumptionRegister` and `ConsumptionRegister.Unit` |
+| 8.9, hub | `CHFDeviceLog.<deviceId>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` for each device in the log |
+| 6.2.9, meter | `PaymentMode` |
+| 11.2, any device | `FirmwareVersion` |
+| 6.30, hub | every value that is plain text in the Response, named after its element (`MaximumSubGHzChannelChangesPerWeek`, `GSMECurfew`, the duty cycle and noise thresholds...). The channel lists are not Facts |
+| any | `MessageSuccess`; when it is `false` also `DebugSummary` (the distinct non-success COSEM and ZigBee result strings, comma-separated). A value the Response lacks gives no Fact. |
+
+`MessageSuccess=false` is recorded, not judged: the Service Request stays `RESPONDED` (design D5). The Response is the **decoded MMC XML**, confirmed as what the DSP delivers.
+The DSP simulator answers 4.1.1 with an electricity reading, or a gas reading for the device IDs in `EDT_GAS_DEVICES` (a comma-separated list; Compose and the dcc-tools chart set `00-DB-12-34-56-78-93-A0`, the GSME of `samples/manifests/device-types.csv`).
+
 To confirm with DCC / the lead: which Facts each SRV yields (depends on the final Flows) and how Parsec is called. **[CONFIRM]**
 
 ### Step 15: a signed Manifest in S3 and its message on SQS (dcc-tools, for Batch Ingest)
@@ -821,10 +879,10 @@ dcc-tools makes only what Batch Ingest will read (view 100.010). It does not cop
 EventBridge rule and no dead-letter queue.
 
 ```
-manifest-upload sample.csv
+manifest-upload device-behaviours.csv
   1. SHA-256 of the file, streamed           (MessageDigest, constant memory)
   2. KMS Sign(digest, DIGEST, ECDSA_SHA_256)  with alias/dcc-manifest  (DCC's key, never leaves KMS)
-  3. S3 PutObject edt-manifests/sample.csv, tag dcc-signature=<base64 DER>  -> new object version
+  3. S3 PutObject edt-manifests/device-behaviours.csv, tag dcc-signature=<base64 DER>  -> new object version
   4. SQS SendMessage edt-manifest-events: {"detail-type":"Object Created", "detail":{bucket, object{key, size, version-id}}}
 ```
 
@@ -832,13 +890,13 @@ manifest-upload sample.csv
 |---|---|
 | `dcc-tools/kms-setup/.../KmsSetup.java` | Also creates the Manifest key `alias/dcc-manifest`, the versioned bucket `edt-manifests` and the queue `edt-manifest-events`. |
 | `dcc-tools/manifest-upload/.../ManifestUpload.java` | Steps 1 to 4. `--bad-signature` signs a different digest, for the negative test. |
-| `samples/manifests/sample.csv` | PLACEHOLDER columns `device_id,device_type,flow`, one row per device. |
+| `samples/manifests/` | PLACEHOLDER columns `device_id,device_type,flow`, one row per device. Three files, each with its own purpose: `one-device.csv`, `device-types.csv`, `device-behaviours.csv` (see its README). |
 
 Try it (from `dcc-tools/`, Git Bash):
 ```bash
 ./gradlew installDist && docker compose up -d --build
-MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv
-MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/sample.csv --bad-signature
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/device-behaviours.csv
+MSYS_NO_PATHCONV=1 docker compose run --rm manifest-upload /manifests/device-behaviours.csv --bad-signature
 ```
 Each upload is a new object version, as the model says ("resubmitting a file starts a new Batch").
 
@@ -887,7 +945,7 @@ Verified (dcc-tools running, `docker compose up -d --build batch-ingest`):
 
 | Message | Result |
 |---|---|
-| valid Manifest | `Batch started`, workflow `batch-edt-manifests/sample.csv/<version>` Running in Temporal |
+| valid Manifest | `Batch started`, workflow `batch-edt-manifests/<file>/<version>` Running in Temporal |
 | `--bad-signature` | `Manifest rejected: its DCC signature is not valid` on `edt.security`, no workflow |
 | same message again | `Batch already started: duplicate message`, deleted |
 
@@ -904,7 +962,12 @@ Batch  (ID batch-<bucket>/<key>/<version>, from Batch Ingest)
              returns devices, invalid rows, Verdict counts
   every pages-per-run Pages: wait for them, continue as new carrying (next Page, offset, counts)
   end: Batch result  (logged; published to Kafka in a later step)
-Flow (PLACEHOLDER): one ServiceRequest child (8.2 hubs, 4.1.1 meters) -> RESPONDS / NO_RESPONSE / NOT_DIAGNOSED
+Flow (draft Flows from the Flow Catalogue activity, named by the row's flow column):
+     refused (unknown Flow, or a device type it does not take): nothing sent -> NOT_DIAGNOSED
+     per step: one ServiceRequest child with its own Request ID; FlowStep event (<flow workflow id>/step-N);
+               goes on only while the step ended RESPONDED
+     Verdict: RESPONDS (at least one step got a Response) / NO_RESPONSE (first step timed out or N12/N13) / NOT_DIAGNOSED
+     then one DeviceResult event
 ```
 
 | File (under `orchestrator/src/main/java/prepare/edt/orchestrator/`) | What |
@@ -915,8 +978,22 @@ Flow (PLACEHOLDER): one ServiceRequest child (8.2 hubs, 4.1.1 meters) -> RESPOND
 | `adapter/ManifestReaderActivityImpl.java` | Logs each invalid row (`manifest-row-invalid`, row number) and each Page read. Not a Manifest: non-retryable `NotAManifest`. |
 | `adapter/BatchWorkflowImpl.java` | Pages, the `PageRead` signal, continue-as-new, query `progress` (Temporal UI, Queries tab). |
 | `adapter/PageWorkflowImpl.java` | Reads, signals the Batch, runs the Flows with a limit. |
-| `adapter/PlaceholderFlowWorkflowImpl.java` | PLACEHOLDER until the Flow Catalogue (010.020). |
+| `adapter/FlowWorkflowImpl.java` | The Flow (workflow type `Flow`): looks the Flow up, refuses a row it cannot run (log event `flow-refused`, Verdict `NOT_DIAGNOSED`, no request, the workflow does not fail), runs the steps one after the other (Request ID counter strictly increasing inside the Flow), stops at the first step that is not `RESPONDED`, decides the Verdict (`verdictOf`), publishes one `FlowStep` per step and one `DeviceResult`, and logs `flow-ended` with `edt.flow` and `edt.steps`. |
+| `entity/Flow.java`, `entity/FlowCatalogue.java` | The Flow Catalogue (model 010.020) as data: `Flow(name, steps)`, `Step(srv, deviceTypes)`, and the two **draft** Flows. This is where a Flow is defined. |
+| `adapter/FlowCatalogueActivity.java`, `FlowCatalogueActivityImpl.java` | Activity `LookupFlow`: returns the Flow, or `found=false` for a name the catalogue does not have (a normal result, not a failure). Called by `FlowWorkflowImpl` for each device. |
 | `entity/FairnessKey.java` | Fix found live: Temporal refuses a fairness key over **64 bytes**. A longer Batch ID becomes its SHA-256 (base64url, 43 characters). |
+
+The two draft Flows (`entity/FlowCatalogue.java`; written from DCC's list of candidate Service Requests in
+`samples/possible_flows.csv`, see `samples/draft_flows.md`; **[CONFIRM]** DCC provides the three approved Flows and their names):
+
+| Flow | Device types | Steps |
+|---|---|---|
+| `hub-triage` | CHF | SRV 8.9 Read Device Log, then SRV 6.30 Read CHF Sub GHz Configuration |
+| `meter-triage` | ESME, GSME | SRV 6.2.9 Read Device Configuration (Payment Mode), then SRV 11.2 Read Firmware Version |
+
+To add a Flow, add an entry to the map in `FlowCatalogue` and make sure the builder, the signer's schema and allowlist, the decoder and
+the simulator know its SRVs (see the table of SRVs above). Names are case-sensitive. The lookup is an **activity** on purpose: its result is
+recorded in the workflow history, so a Flow that is running when the catalogue changes keeps the steps it was given.
 
 Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `rows-per-page=2`, `pages-at-a-time=2`,
 `flows-per-page=2`, `pages-per-run=2`, `read-chunk-bytes=65536`. **[CONFIRM]** production values.
@@ -924,16 +1001,18 @@ Settings (`edt.batch.*`, small locally so the 5-row sample shows everything): `r
 **[INFERRED]** The model says the Page reads its rows, but the Batch needs the next Page's offset to keep several Pages
 running. So the Page signals it back (`PageRead`) as soon as it has read. The model does not draw this.
 
-Verified with `samples/manifests/sample.csv` (upload as in step 15):
+Verified on the local cluster (2026-11-25, with the draft Flows) with `samples/manifests/device-behaviours.csv` (upload as in step 15; one ESME per simulator behaviour, A0 to A7, all on `meter-triage`). Every step of a Flow gets the device's behaviour, and the Flow stops at the first step without a Response:
 
-| Device | Service Request | Verdict |
+| Device | Steps run (`FlowStep`) | Verdict |
 |---|---|---|
-| A0, A5 | RESPONDED | RESPONDS |
-| A1, A2 | FAILED_ALERT (N12, N13) | NO_RESPONSE |
-| A3 (hub, 8.2) | TIMED_OUT | NO_RESPONSE |
+| A0, A5 | 2: 6.2.9 RESPONDED, 11.2 RESPONDED | RESPONDS |
+| A1, A2 | 1: 6.2.9 FAILED_ALERT (N12, N13) | NO_RESPONSE |
+| A3, A6 | 1: 6.2.9 TIMED_OUT (A3 silent; A6's tampered Response was discarded) | NO_RESPONSE |
+| A4 | 1: 6.2.9 REJECTED_BY_DSP | NOT_DIAGNOSED |
+| A7 | 1: 6.2.9 SEND_FAILED (tampered synchronous response refused) | NOT_DIAGNOSED |
 
-Pages read bytes 0-99, 99-170 and 170-206. The Batch continued as new after Page 1. Result:
-`{"devices":5,"invalidRows":0,"pages":3,"verdicts":{"NO_RESPONSE":3,"RESPONDS":2}}`.
+Result: `{"devices":8,"invalidRows":0,"pages":5,"verdicts":{"NOT_DIAGNOSED":2,"NO_RESPONSE":4,"RESPONDS":2}}`.
+The Batch continues as new after enough Pages. `device-types.csv` gives the three Response shapes and their Facts (step 14).
 
 ### Step 18: Kafka (bare minimum) and the Result Publisher
 
@@ -985,11 +1064,14 @@ Read a topic (partition, key, headers, value):
 MSYS_NO_PATHCONV=1 docker run --rm --network edt apache/kafka:4.1.0 /opt/kafka/bin/kafka-console-consumer.sh   --bootstrap-server kafka:9092 --topic edt.device-results --from-beginning --timeout-ms 8000   --property print.partition=true --property print.key=true --property print.headers=true
 ```
 
-Verified with the sample Manifest: 11 messages (5 steps, 5 device results, 1 Batch result). A device result:
+Verified on the local cluster (2026-11-25, draft Flows) with `samples/manifests/device-types.csv`: 10 messages (6 `FlowStep`, 3 `DeviceResult`, 1 `BatchResult`). A device result:
 ```
-Partition:1  event-id:batch-.../row-1,event-type:DeviceResult  00-DB-12-34-56-78-90-A0
-{"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-90-A0","rowNumber":1,"flow":"flow-1","verdict":"RESPONDS"}
+{"eventId":"batch-.../row-1","time":"...","batchId":"batch-...","deviceId":"00-DB-12-34-56-78-92-A0","rowNumber":1,"flow":"meter-triage","verdict":"RESPONDS"}
 ```
+
+The step events of the CHF (`hub-triage`) carry the Facts of 8.9 (`CHFDeviceLog.<id>.LastCommunicationsDateTime` and `.SubGHzLinkQuality` for two devices) and then of 6.30 (the 11 thresholds).
+
+The two Kafka runs of the older single-step Flow below (A3's timer) are kept as history.
 
 Seen once in that run: A3's 2-minute timer fired after 5 min 50 s (the history shows `startToFireTimeout: 120s`).
 Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine paused?), not the code. Watch for it.
@@ -998,7 +1080,7 @@ Run alone, A3 took 2m0.3s, so it was the local environment (Docker VM or machine
 
 The same four applications and the same `dcc-tools`, on the Kubernetes that comes with Docker Desktop, installed with
 Helm. The OpenSpec change `local-kubernetes-helm` (in `openspec/changes/`) has the reasons and the decisions.
-Docker Compose stays as it is; use one or the other, because both want the ports 8081-8084, 8088 and 4566.
+Docker Compose stays as it is; use one or the other, because both want the ports 8081-8084, 8088, 8089 and 4566.
 
 **Prerequisites** (nothing needs an account):
 - Docker Desktop with **Kubernetes enabled** (Settings, Kubernetes). `kubectl config current-context` must say `docker-desktop`.
@@ -1008,7 +1090,7 @@ Docker Compose stays as it is; use one or the other, because both want the ports
 
 ```
 deploy/edt.sh up        # build, install, wait until the four apps are ready (about 3 minutes the first time)
-deploy/edt.sh forward   # Temporal UI :8088, Floci :4566, the apps' health on :8081-:8084; Ctrl+C stops
+deploy/edt.sh forward   # Temporal UI :8088, Kafka UI :8089, Floci :4566, the apps' health on :8081-:8084; Ctrl+C stops
 deploy/edt.sh down      # remove everything the script created
 ```
 

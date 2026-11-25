@@ -16,6 +16,11 @@ import io.temporal.activity.ActivityMethod;
 @ActivityInterface
 public interface SignActivity {
 
+    /**
+     * @param unsignedServiceRequest the DUIS Service Request, unsigned
+     * @param deviceType             the type of the target device (ESME, GSME, CHF, ...): a DUIS request does not carry it,
+     *                               and the signing policy checks it against the SRV
+     */
     @ActivityMethod(name = "Sign")
-    SignOutcome sign(String unsignedServiceRequest);
+    SignOutcome sign(String unsignedServiceRequest, String deviceType);
 }

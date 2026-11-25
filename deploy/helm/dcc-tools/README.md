@@ -19,6 +19,7 @@ Installed by `deploy/edt.sh up` into the namespace `dcc-tools`. The four EDT app
 | `floci` | AWS KMS, S3 and SQS (service `floci`, port 4566) | In memory: a restart loses keys, Manifests and messages |
 | `kafka` | one Kafka broker (service `kafka`) | See "Placeholders" below |
 | `kafka-topics` (Job) | creates the EDT topics | Retries until the broker answers |
+| `kafka-ui` | a web page to browse the topics (service port 8089) | A developer tool, not part of the model. Reach it with a port-forward |
 | `dsp-simulator` | the DSP HTTPS Gateway, the DSP and the devices | Needs the Secret `dsp-signing-key` |
 
 The Secrets (the certificate store and the DSP key) are not part of the chart. `deploy/edt.sh` creates them from the
@@ -39,11 +40,13 @@ missing, and `deploy/edt.sh` passes them.
 | `postgresql.user` | `temporal` | Database user (test credential, as in Compose) |
 | `postgresql.password` | `temporal` | Database password (test credential, as in Compose) |
 | `floci.image` | `floci/floci:2.4.0` | The AWS emulator image (open source, no account) |
+| `kafkaUi.image` | `ghcr.io/kafbat/kafka-ui:v1.4.2` | Kafka UI image (Kafbat, Apache-2.0, no account) |
 | `kafka.image` | `apache/kafka:4.1.0` | Kafka image, also used by the topics Job |
 | `kafka.clusterDomain` | `cluster.local` | The cluster's DNS suffix. The broker advertises `kafka.<namespace>.svc.<clusterDomain>:9092`, because the short name `kafka` does not resolve from the `edt` namespace |
 | `dspSimulator.image` | `edt/dsp-simulator:local` | Built by `dcc-tools`; `deploy/edt.sh` loads it into the cluster node |
 | `dspSimulator.responseListenerUrl` | `http://response-listener.edt.svc.cluster.local:8084/duis/responses` | Where the simulator sends the delayed Responses |
 | `dspSimulator.responseDelaySeconds` | `5` | How long the simulator waits before it sends a Response |
+| `dspSimulator.gasDevices` | `00-DB-12-34-56-78-93-A0` | Comma-separated device IDs that are gas meters: a 4.1.1 Response for them is a gas reading (the default is electricity). Set as `EDT_GAS_DEVICES` |
 | `dspSimulator.keySecret` | `dsp-signing-key` | Name of the Secret that holds the DSP's private key (file `dsp-signing.p12`) |
 | `dspSimulator.keystorePassword` | `edt-test-only` | Password of that key store (test only) |
 | `temporal.serverImage` | `temporalio/server:1.32.2` | Temporal Server image |

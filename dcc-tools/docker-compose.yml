@@ -130,6 +130,7 @@ services:
     environment:
       EDT_RESPONSE_LISTENER_URL: http://response-listener:8084/duis/responses
       EDT_RESPONSE_DELAY_SECONDS: "5"
+      EDT_GAS_DEVICES: "00-DB-12-34-56-78-93-A0"   # comma-separated device IDs that are gas meters (a 4.1.1 Response for them is a gas reading); this one is the GSME of samples/manifests/device-types.csv
       EDT_DSP_KEYSTORE: /dsp-keys/dsp-signing.p12
       EDT_DSP_KEYSTORE_PASSWORD: edt-test-only
     volumes:
@@ -182,7 +183,7 @@ services:
     entrypoint: ["/bin/sh", "/scripts/create-topics.sh"]
 
   # Run on demand (not started by "up"): signs a Manifest with DCC's key, uploads it, puts the message on the queue.
-  #   docker compose run --rm manifest-upload /manifests/sample.csv [--bad-signature]
+  #   docker compose run --rm manifest-upload /manifests/one-device.csv [--bad-signature]
   # Build first: ./gradlew :manifest-upload:installDist (from dcc-tools/)
   # No depends_on on purpose: "run" would start kms-setup again, which makes a new DSP key.
   manifest-upload:

@@ -18,7 +18,7 @@ import prepare.edt.duissigner.usecase.AuditLog.Outcome;
 
 /**
  * Tests the use case with hand-written fakes for its three ports. No framework, no XML, no keys.
- * PLACEHOLDER data: invented SRV and User ID.
+ * PLACEHOLDER policy data: invented User ID.
  */
 class SignServiceRequestTest {
 
@@ -27,13 +27,16 @@ class SignServiceRequestTest {
     final SigningPolicy policy = new SigningPolicy(Map.of(
             UserRole.OTHER_USER, new RolePolicy(OTHER_USER_ID, Map.of("4.1.1", Set.of("ESME")))));
 
-    /** Fake reader: the "XML" is just "srv|originator|deviceType", or "bad" for an invalid one. */
-    final ServiceRequestReader reader = xml -> {
+    /**
+     * Fake reader: the "XML" is just "srv|originator", or "bad" for an invalid one.
+     * The device type is the one given with the request, as in the real reader.
+     */
+    final ServiceRequestReader reader = (xml, deviceType) -> {
         if (xml.equals("bad")) {
             throw new ServiceRequestReader.InvalidServiceRequestException("not valid against the schema");
         }
         String[] parts = xml.split("\\|");
-        return new ServiceRequest("REQ-1", parts[0], parts[1], parts[2], xml);
+        return new ServiceRequest("REQ-1", parts[0], parts[1], deviceType, xml);
     };
 
     /** Fake signer: remembers its calls and "signs" by adding a marker. */
@@ -55,9 +58,9 @@ class SignServiceRequestTest {
 
     @Test
     void every_decision_records_how_long_it_took() {
-        useCase.sign("4.1.1|" + OTHER_USER_ID + "|ESME");
-        useCase.sign("9.9.9|" + OTHER_USER_ID + "|ESME");
-        useCase.sign("bad");
+        useCase.sign("4.1.1|" + OTHER_USER_ID, "ESME");
+        useCase.sign("9.9.9|" + OTHER_USER_ID, "ESME");
+        useCase.sign("bad", "ESME");
 
         assertEquals(3, audit.size());
         assertTrue(audit.stream().allMatch(e -> e.durationNanos() >= 0), "a signed, a refused and an invalid request");
@@ -65,16 +68,16 @@ class SignServiceRequestTest {
 
     @Test
     void approved_request_is_signed_and_audited() {
-        SignResult result = useCase.sign("4.1.1|" + OTHER_USER_ID + "|ESME");
+        SignResult result = useCase.sign("4.1.1|" + OTHER_USER_ID, "ESME");
 
         assertEquals(new SignResult.Signed("REQ-1", UserRole.OTHER_USER,
-                "4.1.1|" + OTHER_USER_ID + "|ESME|signed-as-OTHER_USER"), result);
+                "4.1.1|" + OTHER_USER_ID + "|signed-as-OTHER_USER"), result);
         assertEquals(List.of(new AuditEvent("REQ-1", "4.1.1", Outcome.SIGNED, UserRole.OTHER_USER, null, 0)), withoutDurations());
     }
 
     @Test
     void refused_request_is_not_signed_but_audited() {
-        SignResult result = useCase.sign("9.9.9|" + OTHER_USER_ID + "|ESME");
+        SignResult result = useCase.sign("9.9.9|" + OTHER_USER_ID, "ESME");
 
         String reason = "SRV 9.9.9 is not on the allowlist of any User Role";
         assertEquals(new SignResult.Refused("REQ-1", reason), result);
@@ -83,8 +86,16 @@ class SignServiceRequestTest {
     }
 
     @Test
+    void the_device_type_given_with_the_request_decides_the_policy_check() {
+        SignResult result = useCase.sign("4.1.1|" + OTHER_USER_ID, "CHF");
+
+        assertEquals(new SignResult.Refused("REQ-1", "device type CHF is not allowed for SRV 4.1.1"), result);
+        assertTrue(signedAs.isEmpty());
+    }
+
+    @Test
     void invalid_xml_is_refused_and_audited() {
-        SignResult result = useCase.sign("bad");
+        SignResult result = useCase.sign("bad", "ESME");
 
         String reason = "invalid Service Request: not valid against the schema";
         assertEquals(new SignResult.Refused(null, reason), result);
@@ -99,7 +110,7 @@ class SignServiceRequestTest {
         };
         SignServiceRequest withBrokenAudit = new SignServiceRequest(reader, policy, signer, brokenAudit);
 
-        assertThrows(IllegalStateException.class, () -> withBrokenAudit.sign("4.1.1|" + OTHER_USER_ID + "|ESME"));
+        assertThrows(IllegalStateException.class, () -> withBrokenAudit.sign("4.1.1|" + OTHER_USER_ID, "ESME"));
     }
 
     @Test
@@ -109,7 +120,7 @@ class SignServiceRequestTest {
         };
         SignServiceRequest withSignerDown = new SignServiceRequest(reader, policy, down, audit::add);
 
-        assertThrows(IllegalStateException.class, () -> withSignerDown.sign("4.1.1|" + OTHER_USER_ID + "|ESME"));
+        assertThrows(IllegalStateException.class, () -> withSignerDown.sign("4.1.1|" + OTHER_USER_ID, "ESME"));
         assertTrue(audit.isEmpty(), "a technical error is not a decision, so it is not audited");
     }
 }

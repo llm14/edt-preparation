@@ -15,8 +15,8 @@ public final class SignActivityImpl implements SignActivity {
     }
 
     @Override
-    public SignOutcome sign(String unsignedServiceRequest) {
-        return switch (useCase.sign(unsignedServiceRequest)) {
+    public SignOutcome sign(String unsignedServiceRequest, String deviceType) {
+        return switch (useCase.sign(unsignedServiceRequest, deviceType)) {
             case SignResult.Signed signed -> new SignOutcome(SignOutcome.SIGNED, signed.requestId(),
                     signed.role().name(), signed.signedXml(), null);
             case SignResult.Refused refused -> new SignOutcome(SignOutcome.REFUSED, refused.requestId(),
