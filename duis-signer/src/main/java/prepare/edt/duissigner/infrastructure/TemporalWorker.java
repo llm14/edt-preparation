@@ -46,7 +46,7 @@ public class TemporalWorker {
         worker.registerActivitiesImplementations(new SignActivityImpl(signServiceRequest));
         factory.start();
 
-        try (var call = Interaction.outbound("edt.duisSignerReqGrpc", "worker-started").duration(System.nanoTime() - startedAt);
+        try (var call = InterfaceLog.outbound("edt.duisSignerReqGrpc", "worker-started").duration(System.nanoTime() - startedAt);
                 var fields = LogFields.of(
                 "temporal.target", config.target(),
                 "temporal.namespace", config.namespace(),

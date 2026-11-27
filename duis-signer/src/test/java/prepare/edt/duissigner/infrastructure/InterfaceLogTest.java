@@ -8,13 +8,13 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import prepare.edt.duissigner.adapter.LogCapture;
 
-/** Interaction writes one line on edt.interaction with the common keys, and leaves nothing in the MDC. */
-class InteractionTest {
+/** InterfaceLog writes one line on edt.interaction with the common keys, and leaves nothing in the MDC. */
+class InterfaceLogTest {
 
     @Test
     void the_line_has_the_common_keys_and_a_duration() {
         try (LogCapture log = new LogCapture()) {
-            try (var call = Interaction.outbound("edt.test", "test-called")) {
+            try (var call = InterfaceLog.outbound("edt.test", "test-called")) {
                 call.log("called");
             }
             var line = log.lines("edt.interaction").getFirst();
@@ -30,7 +30,7 @@ class InteractionTest {
     @Test
     void an_inbound_call_is_marked_inbound() {
         try (LogCapture log = new LogCapture()) {
-            try (var call = Interaction.inbound("edt.test", "test-received")) {
+            try (var call = InterfaceLog.inbound("edt.test", "test-received")) {
                 call.log("received");
             }
             assertEquals("inbound", log.lines("edt.interaction").getFirst().fields().get("network.direction"));
@@ -40,13 +40,13 @@ class InteractionTest {
     @Test
     void an_inbound_call_has_a_duration_only_when_timed_or_set() {
         try (LogCapture log = new LogCapture()) {
-            try (var call = Interaction.inbound("edt.test", "plain")) {
+            try (var call = InterfaceLog.inbound("edt.test", "plain")) {
                 call.log("plain");
             }
-            try (var call = Interaction.inbound("edt.test", "timed").timed()) {
+            try (var call = InterfaceLog.inbound("edt.test", "timed").timed()) {
                 call.log("timed");
             }
-            try (var call = Interaction.inbound("edt.test", "set").duration(42)) {
+            try (var call = InterfaceLog.inbound("edt.test", "set").duration(42)) {
                 call.log("set");
             }
             var lines = log.lines("edt.interaction");
@@ -59,7 +59,7 @@ class InteractionTest {
     @Test
     void failure_can_be_set_and_extra_fields_added() {
         try (LogCapture log = new LogCapture()) {
-            try (var call = Interaction.outbound("edt.test", "test-called")) {
+            try (var call = InterfaceLog.outbound("edt.test", "test-called")) {
                 call.with("http.response.status_code", 500).failure().log("failed");
             }
             var line = log.lines("edt.interaction").getFirst();
@@ -71,7 +71,7 @@ class InteractionTest {
     @Test
     void nothing_is_left_in_the_mdc_after_the_block() {
         try (LogCapture log = new LogCapture()) {
-            try (var call = Interaction.outbound("edt.test", "test-called").with("edt.extra", "x")) {
+            try (var call = InterfaceLog.outbound("edt.test", "test-called").with("edt.extra", "x")) {
                 call.log("inside");
             }
             LoggerFactory.getLogger("test.interaction").info("outside");

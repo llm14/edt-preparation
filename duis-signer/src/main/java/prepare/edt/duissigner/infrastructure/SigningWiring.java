@@ -103,7 +103,7 @@ public class SigningWiring {
 
     private static KeyStore loadKeyStore(SigningConfig signing) throws Exception {
         // Never the store's password or content: its path only.
-        try (var call = Interaction.outbound("edt.duisSignerReqFile", "certificate-store-loaded")
+        try (var call = InterfaceLog.outbound("edt.duisSignerReqFile", "certificate-store-loaded")
                 .with("edt.certificate_store", signing.certificateStore())) {
             KeyStore keyStore;
             try (InputStream in = Files.newInputStream(Path.of(signing.certificateStore()))) {

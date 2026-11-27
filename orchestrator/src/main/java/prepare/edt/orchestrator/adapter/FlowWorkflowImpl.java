@@ -61,6 +61,13 @@ public class FlowWorkflowImpl implements FlowWorkflow {
             previousCounter = counter;
             RequestId requestId = RequestId.placeholder(ORIGINATOR, input.deviceId(), counter);
 
+            // Starts a new process: a Service Request child workflow, with its own workflow ID (from the Request ID) and its
+            // own history. The Flow waits here for it to end, because the next step depends on its outcome.
+            try (var fields = LogFields.of("event.action", "service-request-started", "edt.batch_id", input.batchId(),
+                    "edt.manifest.row", input.rowNumber(), "edt.device_id", input.deviceId(),
+                    "edt.request_id", requestId.value(), "edt.step", number, "edt.srv", step.srv())) {
+                LOG.info("Service Request started");
+            }
             ServiceRequestWorkflow serviceRequest = Workflow.newChildWorkflowStub(ServiceRequestWorkflow.class,
                     ChildWorkflowOptions.newBuilder().setWorkflowId(requestId.workflowId()).build());
             ServiceRequestOutcome outcome = serviceRequest.executeServiceRequest(new ServiceRequestInput(requestId.value(),

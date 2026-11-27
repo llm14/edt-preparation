@@ -63,7 +63,15 @@ public class PageWorkflowImpl implements PageWorkflow {
         return new PageResult(rows.rows().size(), rows.invalidRows(), verdicts);
     }
 
+    /**
+     * Starts a new process: a Flow child workflow (FlowWorkflow) for one device, with its own workflow ID and its own
+     * history. It does not wait for the Flow to end: the Verdict is counted when it does. Logs "Flow started" at INFO.
+     */
     private void startFlow(String batchId, ManifestRow row) {
+        try (var fields = LogFields.of("event.action", "flow-started", "edt.batch_id", batchId,
+                "edt.manifest.row", row.rowNumber(), "edt.device_id", row.deviceId(), "edt.flow", row.flow())) {
+            LOG.info("Flow started");
+        }
         FlowWorkflow flow = Workflow.newChildWorkflowStub(FlowWorkflow.class, ChildWorkflowOptions.newBuilder()
                 .setWorkflowId(WorkflowIds.flow(batchId, row.rowNumber()))
                 .build());

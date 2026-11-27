@@ -32,7 +32,7 @@ public class DspCertificateWiring {
             throw new IllegalStateException("no DSP certificate '" + config.certificateAlias() + "' in "
                     + config.certificateStore());
         }
-        try (var call = Interaction.outbound("edt.orchestratorReqFile", "dsp-certificate-loaded")
+        try (var call = InterfaceLog.outbound("edt.orchestratorReqFile", "dsp-certificate-loaded")
                 .duration(System.nanoTime() - startedAt)
                 .with("edt.certificate_store", config.certificateStore())
                 .with("edt.dsp_certificate_subject", certificate.getSubjectX500Principal().getName())) {

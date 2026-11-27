@@ -5,7 +5,7 @@ import io.temporal.workflow.Async;
 import io.temporal.workflow.ChildWorkflowOptions;
 import io.temporal.workflow.Workflow;
 import org.slf4j.Logger;
-import prepare.edt.orchestrator.infrastructure.Interaction;
+import prepare.edt.orchestrator.infrastructure.InterfaceLog;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.adapter.PageWorkflow.PageInput;
 
@@ -43,16 +43,22 @@ public class BatchWorkflowImpl implements BatchWorkflow {
         this.settings = settings;
     }
 
+    /**
+     * Runs the Batch. This method does not start the Batch: Batch Ingest started it (TemporalBatchStarter, through the
+     * Temporal Server) and the Orchestrator worker is now running it. It does start one new process for each Page
+     * (child workflow, see {@link #startPage}).
+     */
     @Override
     public BatchResult processManifest(BatchInput input) {
         String batchId = Workflow.getInfo().getWorkflowId();
         if (input.progress() != null) {
             progress = input.progress();
         } else {
-            // First run: the start the Batch Ingest asked for. Not repeated after a continue-as-new.
-            try (var call = Interaction.inbound("edt.orchestratorReqGrpc", "batch-start-received")
+            // First run: the start Batch Ingest asked for (it is the one that started this workflow; this line only
+            // logs that the Orchestrator received it). Not repeated after a continue-as-new.
+            try (var call = InterfaceLog.inbound("edt.orchestratorReqGrpc", "batch-start-received")
                     .with("edt.batch_id", batchId)) {
-                call.log(Workflow.getLogger(Interaction.LOGGER), "Batch start received");
+                call.log(Workflow.getLogger(InterfaceLog.LOGGER), "Batch start received");
             }
         }
         int startedThisRun = 0;
@@ -95,9 +101,18 @@ public class BatchWorkflowImpl implements BatchWorkflow {
         return result;
     }
 
+    /**
+     * Starts a new process: a Page child workflow (PageWorkflow), with its own workflow ID and its own history. It does
+     * not wait for the Page to end: the Page runs on its own, and its result is added to the progress when it ends.
+     * Logs "Page started" at INFO.
+     */
     private void startPage(String batchId, BatchInput input) {
         int page = progress.nextPage();
         long offset = progress.nextOffset();
+        try (var fields = LogFields.of("event.action", "page-started", "edt.batch_id", batchId, "edt.page", page,
+                "edt.manifest.offset", offset)) {
+            LOG.info("Page started");
+        }
         var pageInput = new PageInput(batchId, input.bucket(), input.key(), input.versionId(), page, offset,
                 (long) page * settings.rowsPerPage() + 1, settings.rowsPerPage(), settings.flowsPerPage());
         PageWorkflow child = Workflow.newChildWorkflowStub(PageWorkflow.class, ChildWorkflowOptions.newBuilder()

@@ -10,7 +10,7 @@ import java.security.SignatureException;
 import java.util.Base64;
 import java.util.Optional;
 import prepare.edt.batchingest.entity.ManifestRef;
-import prepare.edt.batchingest.infrastructure.Interaction;
+import prepare.edt.batchingest.infrastructure.InterfaceLog;
 import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.ManifestVerifier;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -55,7 +55,7 @@ public final class S3ManifestVerifier implements ManifestVerifier {
             long bytesRead = 0;
 
             // Row 3: the S3 reads (the signature tag, then the object).
-            try (var read = Interaction.outbound(S3_INTERFACE, "manifest-read")) {
+            try (var read = InterfaceLog.outbound(S3_INTERFACE, "manifest-read")) {
                 try {
                     Optional<String> tag = s3.getObjectTagging(r -> r
                                     .bucket(manifest.bucket()).key(manifest.key()).versionId(manifest.versionId()))
@@ -97,7 +97,7 @@ public final class S3ManifestVerifier implements ManifestVerifier {
             }
 
             // Row 4: the signature check, which is where the digest goes to KMS. No signature to check is a failure too.
-            try (var check = Interaction.outbound(KMS_INTERFACE, "manifest-signature-checked")
+            try (var check = InterfaceLog.outbound(KMS_INTERFACE, "manifest-signature-checked")
                     .with("edt.signature_provider", signatureProvider)) {
                 if (problem != null) {
                     check.failure().log("Manifest signature not checked: " + problem.reason());

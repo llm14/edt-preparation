@@ -118,10 +118,10 @@ settings, this checks what the packaged apps really write.
 
 Each time a container calls another system, or is called by one, through an interface of the architecture model, it writes one
 INFO line on the logger `edt.interaction` (`log.logger` in the JSON). Searching that one logger shows everything a container
-exchanged with the outside. The `Interaction` helper, next to `LogFields` in each app, writes the line:
+exchanged with the outside. The `InterfaceLog` helper, next to `LogFields` in each app, writes the line:
 
 ```java
-try (var call = Interaction.outbound("edt.orchestratorReqHttp", "service-request-sent")
+try (var call = InterfaceLog.outbound("edt.orchestratorReqHttp", "service-request-sent")
         .with("edt.request_id", requestId)) {
     // ... make the call ...
     call.log("Service Request posted to the DSP HTTPS Gateway");

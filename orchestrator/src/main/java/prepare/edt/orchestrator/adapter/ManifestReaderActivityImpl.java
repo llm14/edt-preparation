@@ -5,7 +5,7 @@ import io.temporal.failure.ApplicationFailure;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import prepare.edt.orchestrator.entity.ManifestLocation;
-import prepare.edt.orchestrator.infrastructure.Interaction;
+import prepare.edt.orchestrator.infrastructure.InterfaceLog;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 import prepare.edt.orchestrator.usecase.ReadManifestPage;
 import prepare.edt.orchestrator.usecase.ReadManifestPage.ManifestPage;
@@ -46,7 +46,7 @@ public class ManifestReaderActivityImpl implements ManifestReaderActivity {
             }
         }
         // Made after the invalid-row lines: both set event.action, and closing one would remove the other's key.
-        try (var call = Interaction.outbound("edt.orchestratorReqS3", "manifest-page-read")
+        try (var call = InterfaceLog.outbound("edt.orchestratorReqS3", "manifest-page-read")
                 .duration(System.nanoTime() - startedAt)
                 .with("edt.manifest.offset", request.offset())
                 .with("edt.manifest.next_offset", page.nextOffset())

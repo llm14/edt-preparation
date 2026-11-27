@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import prepare.edt.batchingest.adapter.ObjectCreatedEvent.UnreadableEventException;
 import prepare.edt.batchingest.entity.ManifestRef;
-import prepare.edt.batchingest.infrastructure.Interaction;
+import prepare.edt.batchingest.infrastructure.InterfaceLog;
 import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.IngestManifest;
 import prepare.edt.batchingest.usecase.IngestManifest.Outcome;
@@ -72,7 +72,7 @@ public final class SqsManifestEventConsumer {
         try (var fields = LogFields.of("edt.manifest.bucket", manifest.bucket(), "edt.manifest.key", manifest.key(),
                 "edt.manifest.version_id", manifest.versionId(), "edt.sqs_message_id", message.messageId())) {
             // Inbound, so no duration: the time of the long poll is waiting for a message, not work.
-            try (var received = Interaction.inbound(SQS_INTERFACE, "manifest-received")) {
+            try (var received = InterfaceLog.inbound(SQS_INTERFACE, "manifest-received")) {
                 received.log("Manifest received");
             }
 
@@ -95,7 +95,7 @@ public final class SqsManifestEventConsumer {
                     SECURITY.warn("Manifest rejected: its DCC signature is not valid");
                 }
             }
-            try (var deleted = Interaction.outbound(SQS_INTERFACE, "sqs-message-deleted")) {
+            try (var deleted = InterfaceLog.outbound(SQS_INTERFACE, "sqs-message-deleted")) {
                 try {
                     sqs.deleteMessage(r -> r.queueUrl(queueUrl).receiptHandle(message.receiptHandle()));
                 } catch (RuntimeException e) {

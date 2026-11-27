@@ -1,15 +1,17 @@
-package prepare.edt.batchingest.infrastructure;
+package prepare.edt.responselistener.infrastructure;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Writes the one line for a boundary crossing (a call to or from another system) on the logger {@code edt.interaction}.
+ * Writes the one INFO log line for a boundary crossing (a call to or from another system) on the logger {@code edt.interaction}.
+ * It only writes a log line: it does not call, start or signal anything (a workflow is started by a Temporal client or a
+ * child workflow stub, for example TemporalBatchStarter).
  * It sets the keys every such line has (event.action, edt.interface, network.direction, event.outcome, event.duration)
  * and takes them out of the MDC when the block closes. Use it beside {@link LogFields} for the identifiers.
  *
  * <pre>
- * try (var call = Interaction.outbound("edt.orchestratorReqHttp", "service-request-sent")) {
+ * try (var call = InterfaceLog.outbound("edt.orchestratorReqHttp", "service-request-sent")) {
  *     // ... make the call ...
  *     call.log("Service Request posted");
  * }
@@ -18,7 +20,7 @@ import org.slf4j.LoggerFactory;
  * The duration is measured from the moment the helper is created to the moment {@link #log} is called. The outcome is
  * success unless {@link #failure()} was called first.
  */
-public final class Interaction implements AutoCloseable {
+public final class InterfaceLog implements AutoCloseable {
 
     /** The logger name the line is written on; its level is set in application.properties. */
     public static final String LOGGER = "edt.interaction";
@@ -31,44 +33,44 @@ public final class Interaction implements AutoCloseable {
     private Long durationNanos;
     private boolean timed;
 
-    private Interaction(String edtInterface, String action, String direction, boolean timed) {
+    private InterfaceLog(String edtInterface, String action, String direction, boolean timed) {
         this.fields = LogFields.of("event.action", action, "edt.interface", edtInterface, "network.direction", direction);
         this.timed = timed;
     }
 
     /** A call this container makes. {@code edtInterface} is the interface ID of the architecture model. */
-    public static Interaction outbound(String edtInterface, String action) {
-        return new Interaction(edtInterface, action, "outbound", true);
+    public static InterfaceLog outbound(String edtInterface, String action) {
+        return new InterfaceLog(edtInterface, action, "outbound", true);
     }
 
     /**
      * A call this container receives. It has no duration unless {@link #timed()} or {@link #duration(long)} is used
      * (workflow code, which is replayed, must not read the clock).
      */
-    public static Interaction inbound(String edtInterface, String action) {
-        return new Interaction(edtInterface, action, "inbound", false);
+    public static InterfaceLog inbound(String edtInterface, String action) {
+        return new InterfaceLog(edtInterface, action, "inbound", false);
     }
 
     /** Also writes event.duration, measured from the creation of this helper. */
-    public Interaction timed() {
+    public InterfaceLog timed() {
         timed = true;
         return this;
     }
 
     /** Adds an identifier or result to the line. */
-    public Interaction with(String key, Object value) {
+    public InterfaceLog with(String key, Object value) {
         fields.add(key, value);
         return this;
     }
 
     /** Marks the call as failed: the line gets event.outcome failure. */
-    public Interaction failure() {
+    public InterfaceLog failure() {
         failed = true;
         return this;
     }
 
     /** Uses a duration measured by the caller, for a call that was made before this helper was created. */
-    public Interaction duration(long nanos) {
+    public InterfaceLog duration(long nanos) {
         durationNanos = nanos;
         return this;
     }

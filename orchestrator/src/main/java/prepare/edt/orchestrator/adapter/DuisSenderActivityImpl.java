@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
 import prepare.edt.orchestrator.entity.RequestId;
-import prepare.edt.orchestrator.infrastructure.Interaction;
+import prepare.edt.orchestrator.infrastructure.InterfaceLog;
 import prepare.edt.orchestrator.infrastructure.LogFields;
 
 /**
@@ -67,7 +67,7 @@ public final class DuisSenderActivityImpl implements DuisSenderActivity {
     SyncResponse send(String signedServiceRequest, String requestId) {
         HttpResponse<String> response;
         // Row 9: one line for each attempt, success or failure. No stack: Temporal logs the failed activity with its stack.
-        try (var call = Interaction.outbound("edt.orchestratorReqHttp", "service-request-sent")
+        try (var call = InterfaceLog.outbound("edt.orchestratorReqHttp", "service-request-sent")
                 .with("destination.address", gateway.getHost())
                 .with("http.request.body.bytes", signedServiceRequest.getBytes(StandardCharsets.UTF_8).length)
                 .with("edt.request_id", requestId)) {

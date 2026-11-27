@@ -5,7 +5,7 @@ import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowExecutionAlreadyStarted;
 import io.temporal.client.WorkflowOptions;
 import prepare.edt.batchingest.entity.ManifestRef;
-import prepare.edt.batchingest.infrastructure.Interaction;
+import prepare.edt.batchingest.infrastructure.InterfaceLog;
 import prepare.edt.batchingest.infrastructure.LogFields;
 import prepare.edt.batchingest.usecase.BatchStarter;
 
@@ -34,6 +34,13 @@ public final class TemporalBatchStarter implements BatchStarter {
         this.taskQueue = taskQueue;
     }
 
+    /**
+     * Starts a new process: the Batch workflow, on the Orchestrator task queue, through the Temporal Server. This is
+     * the only place that starts a Batch; the Orchestrator then runs it. Logs "Batch started" at INFO (or "Batch already
+     * started" for a duplicate message, where no process is started).
+     *
+     * @return true if a new Batch was started, false if one already exists for this Manifest version
+     */
     @Override
     public boolean start(ManifestRef manifest) {
         var stub = client.newUntypedWorkflowStub(WORKFLOW_TYPE, WorkflowOptions.newBuilder()
@@ -56,7 +63,7 @@ public final class TemporalBatchStarter implements BatchStarter {
         long nanos = System.nanoTime() - startedAt;
 
         try (var ids = LogFields.of("edt.batch_id", manifest.batchWorkflowId(), "edt.temporal.task_queue", taskQueue);
-                var call = Interaction.outbound(TEMPORAL_INTERFACE, started || failure != null ? "batch-started" : "batch-already-started")
+                var call = InterfaceLog.outbound(TEMPORAL_INTERFACE, started || failure != null ? "batch-started" : "batch-already-started")
                         .duration(nanos)) {
             if (failure != null) {
                 call.failure().log("Could not start the Batch");
